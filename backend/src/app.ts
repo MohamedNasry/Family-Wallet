@@ -1,10 +1,12 @@
 import express from "express";
-import healthRoutes from "./routes/health.routes";
+
+import dbRoutes from "./routes/db.routes";
 
 const app = express();
 
 app.use(express.json());
 
-app.use("/api", healthRoutes);
+
+app.use("/api", dbRoutes);
 
 export default app;
