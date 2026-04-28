@@ -1,12 +1,11 @@
 import express from "express";
 
-import dbRoutes from "./routes/db.routes";
+import authRoutes from "./modules/auth/auth.routes";
 
 const app = express();
 
 app.use(express.json());
 
-
-app.use("/api", dbRoutes);
+app.use("/api/auth", authRoutes);
 
 export default app;
