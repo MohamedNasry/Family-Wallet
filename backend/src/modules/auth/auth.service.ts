@@ -111,11 +111,10 @@ export const loginUser = async (email: string, password: string) => {
   const invite = inviteResult.rows.length > 0 ? inviteResult.rows[0] : null;
 
   const payload = {
-      userId: user.user_id,
-      walletId: user.wallet_id,
-      role: user.role,
-      email: user.email,
-     
+    userId: Number(user.user_id),
+    walletId: Number(user.wallet_id),
+    role: user.role,
+    email: user.email,
   };
 
   const options: SignOptions = {
