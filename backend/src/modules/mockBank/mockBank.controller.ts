@@ -3,17 +3,18 @@ import { accountsInfo, charge, refund } from "./mockBank.service";
 
 export const getAccountInfo = async (req: Request, res: Response) => {
     try {
-        const { userID } = req.params;
+        const { userId } = req.params;
+        const { user } = req as any;
 
         // تحقق
-        if (!userID) {
+        if (!userId && !user) {
             return res.status(400).json({
                 success: false,
                 message: "userID is required",
             });
         }
 
-        const parsedUserID = Number(userID);
+        const parsedUserID = Number(userId);
 
         if (isNaN(parsedUserID)) {
             return res.status(400).json({
@@ -22,7 +23,14 @@ export const getAccountInfo = async (req: Request, res: Response) => {
             });
         }
 
-        const data = await accountsInfo(parsedUserID);
+        const data = user.id === parsedUserID ? await accountsInfo(parsedUserID) : null;
+
+        if (!data) {
+            return res.status(404).json({
+                success: false,
+                message: "Account not found",
+            });
+        }
 
         return res.status(200).json({
             success: true,
