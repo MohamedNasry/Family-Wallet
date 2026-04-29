@@ -1,23 +1,22 @@
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 
-export default function Home() {
+export default function About() {
   const router = useRouter();
 
   return (
     <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <Text style={{ fontSize: 22 }}> Home Page</Text>
+      <Text style={{ fontSize: 22, marginBottom: 20 }}> About Page</Text>
 
       <Pressable
-        onPress={() => router.push("/about")}
+        onPress={() => router.back()}
         style={{
-          marginTop: 20,
-          backgroundColor: "#FF0000",
-          padding: 10,
+          backgroundColor: "green",
+          padding: 12,
           borderRadius: 8,
         }}
       >
-        <Text style={{ color: "white" }}>Go to About</Text>
+        <Text style={{ color: "white" }}>Go Back</Text>
       </Pressable>
     </View>
   );
