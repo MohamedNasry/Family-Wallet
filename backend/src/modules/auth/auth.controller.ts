@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { registerUser, loginUser, getCurrentUser } from "./auth.service";
+import { registerUser, loginUser, getCurrentUser,joinWithInviteUser } from "./auth.service";
 import type { AuthRequest } from "../../middlewares/auth.middleware";
 
 
@@ -98,6 +98,61 @@ export const me = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to get current user",
+    });
+  }
+};
+
+export const joinWithInvite = async (req: Request, res: Response) => {
+  try {
+    const { fullName, email, password, inviteCode, role } = req.body;
+
+    if (!fullName || !email || !password || !inviteCode || !role) {
+      return res.status(400).json({
+        success: false,
+        message: "fullName, email, password, inviteCode and role are required",
+      });
+    }
+
+    
+
+    const data = await joinWithInviteUser(
+      fullName,
+      email,
+      password,
+      inviteCode,
+      role
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "User joined family wallet successfully",
+      ...data,
+    });
+  } catch (error: any) {
+    if (error.message === "EMAIL_ALREADY_EXISTS") {
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists",
+      });
+    }
+
+    if (error.message === "INVALID_INVITE_CODE") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired invite code",
+      });
+    }
+
+    if (error.message === "INVALID_ROLE") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role. Allowed roles are MEMBER or CHILD",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to join with invite code",
     });
   }
 };
