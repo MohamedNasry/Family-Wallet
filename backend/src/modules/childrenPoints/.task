@@ -1,0 +1,23 @@
+Issue 7: Children Points Wallet API
+Title
+Build children points wallet system
+
+Description
+Create a points wallet system where parents can add points to children and children can spend points.
+
+Endpoints
+GET /api/points/:childId
+POST /api/points/topup
+POST /api/points/spend
+GET /api/points/:childId/transactions
+Tasks
+Allow parent to give points to child
+Allow child to spend points
+Link points to mock bank balance
+Store points transactions in PostgreSQL
+Update balance after each transaction
+Acceptance Criteria
+Parent can add points
+Child can spend points
+Points balance updates correctly
+Transactions are saved and visible
