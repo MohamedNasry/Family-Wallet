@@ -41,6 +41,39 @@ const getMemberInitials = (name: string): string => {
   return `${firstInitial}${secondInitial}` || "--";
 };
 
+type RoleConfig = {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  backgroundColor: string;
+  textColor: string;
+};
+
+const getRoleConfig = (role: FamilyMember["role"]): RoleConfig => {
+  switch (role) {
+    case "PARENT":
+      return {
+        label: "Parent",
+        icon: "shield-checkmark",
+        backgroundColor: "#DCFCE7",
+        textColor: "#047857",
+      };
+    case "CHILD":
+      return {
+        label: "Child",
+        icon: "happy-outline",
+        backgroundColor: "#E0F2FE",
+        textColor: "#0369A1",
+      };
+    default:
+      return {
+        label: "Member",
+        icon: "person-outline",
+        backgroundColor: "#F3F4F6",
+        textColor: "#374151",
+      };
+  }
+};
+
 export default function MembersScreen() {
   const [family, setFamily] = useState<Family | null>(null);
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -300,6 +333,29 @@ export default function MembersScreen() {
 
                     <View style={styles.memberInfo}>
                       <Text style={styles.memberName}>{member.fullName}</Text>
+                      <View
+                        style={[
+                          styles.memberRolePill,
+                          {
+                            backgroundColor: getRoleConfig(member.role).backgroundColor,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={getRoleConfig(member.role).icon}
+                          size={12}
+                          color={getRoleConfig(member.role).textColor}
+                          style={styles.memberRoleIcon}
+                        />
+                        <Text
+                          style={[
+                            styles.memberRoleText,
+                            { color: getRoleConfig(member.role).textColor },
+                          ]}
+                        >
+                          {getRoleConfig(member.role).label}
+                        </Text>
+                      </View>
                       <Text style={styles.memberMeta}>
                         {statsUnavailable
                           ? "Contribution data unavailable"
@@ -511,8 +567,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "900",
   },
+  memberRolePill: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    borderRadius: 14,
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  memberRoleIcon: {
+    marginRight: 6,
+  },
+  memberRoleText: {
+    color: "#1D4ED8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   memberMeta: {
-    marginTop: 4,
+    marginTop: 8,
     color: "#6B7280",
     fontSize: 13,
     fontWeight: "700",
