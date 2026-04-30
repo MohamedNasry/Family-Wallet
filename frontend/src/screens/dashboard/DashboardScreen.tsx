@@ -177,7 +177,7 @@ export default function DashboardScreen() {
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>{formatMoney(remaining)}</Text>
             <Text style={styles.balanceHint}>
-              Remaining from this month's budget
+              Remaining from this month’s budget
             </Text>
           </View>
         </LinearGradient>

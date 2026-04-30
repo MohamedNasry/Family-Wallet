@@ -228,7 +228,7 @@ export default function ParentalControlScreen() {
             <Text style={styles.headerTitle}>Parental Control</Text>
           </View>
 
-          <Text style={styles.headerSubtitle}>Manage children's spending</Text>
+          <Text style={styles.headerSubtitle}>Manage children’s spending</Text>
         </LinearGradient>
 
         <View style={styles.content}>

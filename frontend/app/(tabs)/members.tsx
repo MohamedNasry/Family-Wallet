@@ -1,3 +1,3 @@
-// import MembersScreen from "@/src/screens/family/MembersScreen";
+﻿import MembersScreen from "@/src/screens/family/MembersScreen";
 
-// export default MembersScreen;
+export default MembersScreen;

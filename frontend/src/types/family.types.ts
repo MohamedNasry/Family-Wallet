@@ -1,7 +1,3 @@
-import type { User } from "./user.types";
-
-export type FamilyMember = User;
-
 export type Family = {
   familyId: number;
   name: string;
@@ -10,12 +6,38 @@ export type Family = {
   createdAt?: string;
 };
 
-export type MyFamilyResponse = {
-  success: boolean;
-  family: Family;
+export type FamilyMember = {
+  userId: number;
+  walletId: number;
+  fullName: string;
+  email: string;
+  phone?: string | null;
+  role: "PARENT" | "CHILD" | "MEMBER";
+  joinedAt?: string;
 };
 
 export type FamilyMembersResponse = {
   success: boolean;
+  count?: number;
   members: FamilyMember[];
+};
+
+export type FamilyMemberContributionStats = {
+  userId: number;
+  totalContribution?: number;
+  contributionPercentage?: number;
+  fullName?: string;
+};
+
+export type FamilyMembersStatsResponse = {
+  success: boolean;
+  totalContribution?: number;
+  activeMembers?: number;
+  topContributorId?: number;
+  members?: FamilyMemberContributionStats[];
+};
+
+export type MyFamilyResponse = {
+  success: boolean;
+  family: Family;
 };
