@@ -36,7 +36,7 @@ export const joinWithInviteApi = async (
   });
 };
 
-export const getMeApi = async (): Promise<MeResponse> => {
+export const meApi = async (): Promise<MeResponse> => {
   return apiRequest<MeResponse>("/api/auth/me", {
     method: "GET",
   });

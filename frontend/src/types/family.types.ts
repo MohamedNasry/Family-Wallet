@@ -1,16 +1,12 @@
-import type { UserRole } from "./user.types";
-
 export type Family = {
-  id: number;
+  familyId: number;
   name: string;
-  code?: string;
+  country: string;
+  currency: string;
   createdAt?: string;
 };
 
-export type FamilyMember = {
-  id: number;
-  name: string;
-  role: UserRole;
-  points?: number;
+export type MyFamilyResponse = {
+  success: boolean;
+  family: Family;
 };
-

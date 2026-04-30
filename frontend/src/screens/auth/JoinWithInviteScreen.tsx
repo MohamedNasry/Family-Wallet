@@ -5,6 +5,7 @@ import AppButton from "../../components/AppButton";
 import { joinWithInviteApi } from "../../api/auth.api";
 import { saveToken } from "../../utils/tokenStorage";
 import type { UserRole } from "../../types/user.types";
+import { router } from "expo-router";
 
 export default function JoinWithInviteScreen() {
   const [fullName, setFullName] = useState("");
@@ -33,7 +34,7 @@ export default function JoinWithInviteScreen() {
 
       await saveToken(response.token);
 
-      Alert.alert("Success", `Welcome ${response.user.fullName}`);
+      router.replace("/(tabs)" as any);
     } catch (error: any) {
       Alert.alert("Join Failed", error.message || "Failed to join with invite code");
     } finally {

@@ -8,6 +8,8 @@ import {
   getBillSplits,
   processBillOcr,
   confirmOcrBill,
+  getBills,
+  getBillsSummary,
 } from "./bills.controller";
 import { authMiddleware } from "../../middlewares/auth.middleware";
 
@@ -39,7 +41,8 @@ const upload = multer({
   },
 });//إذا رفع المستخدم صورة أكبر من 5MB، multer سيرفضها.
 
-
+router.get("/", authMiddleware, getBills);
+router.get("/summary", authMiddleware, getBillsSummary);
 router.post("/", authMiddleware, createBill);
 router.post("/ocr", authMiddleware, upload.single("image"), processBillOcr);
 
