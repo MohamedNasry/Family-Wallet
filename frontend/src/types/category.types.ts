@@ -3,3 +3,10 @@ export type Category = {
     name: string;
     isHarmful: boolean;
   };
+
+export type CategoriesResponse = {
+  success: boolean;
+  count: number;
+  categories: Category[];
+};
+

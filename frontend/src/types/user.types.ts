@@ -16,3 +16,8 @@ export type AuthUserPayload = {
   role: UserRole;
   email: string;
 };
+
+export type MeResponse = {
+  success: boolean;
+  user: User;
+};

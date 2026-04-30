@@ -1,3 +1,7 @@
+import type { User } from "./user.types";
+
+export type FamilyMember = User;
+
 export type Family = {
   familyId: number;
   name: string;
@@ -9,4 +13,9 @@ export type Family = {
 export type MyFamilyResponse = {
   success: boolean;
   family: Family;
+};
+
+export type FamilyMembersResponse = {
+  success: boolean;
+  members: FamilyMember[];
 };
