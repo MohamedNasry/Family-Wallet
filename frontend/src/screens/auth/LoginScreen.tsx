@@ -4,6 +4,7 @@ import AppInput from "../../components/AppInput";
 import AppButton from "../../components/AppButton";
 import { loginApi } from "../../api/auth.api";
 import { saveToken } from "../../utils/tokenStorage";
+import { router } from "expo-router";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -25,11 +26,7 @@ export default function LoginScreen() {
       });
 
       await saveToken(response.token);
-
-      Alert.alert(
-        "Login Success",
-        `Welcome ${response.user.fullName}\nInvite Code: ${response.inviteCode || "N/A"}`
-      );
+      router.replace("/(tabs)" as any);
     } catch (error: any) {
       Alert.alert("Login Failed", error.message || "Invalid email or password");
     } finally {

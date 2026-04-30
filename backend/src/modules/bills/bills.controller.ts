@@ -6,8 +6,11 @@ import {
   markSplitAsPaidService,
   processBillOcrService,
   confirmOcrBillService,
+  createBillService,
+  getBillsService,
+  getBillsSummaryService,
 } from "./bills.service";
-import { createBillService } from "./bills.service";
+
 
 
 export const createBill = async (req: AuthRequest, res: Response) => {
@@ -384,6 +387,73 @@ export const confirmOcrBill = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       success: false,
       message: "Failed to confirm OCR bill",
+    });
+  }
+};
+
+
+export const getBills = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "User is not authenticated",
+      });
+    }
+
+    const {
+      categoryId,
+      status,
+      source,
+      fromDate,
+      toDate,
+      limit,
+    } = req.query;
+
+    const bills = await getBillsService({
+      walletId: req.user.walletId,
+      categoryId: categoryId ? Number(categoryId) : null,
+      status: status ? String(status) : null,
+      source: source ? String(source) : null,
+      fromDate: fromDate ? String(fromDate) : null,
+      toDate: toDate ? String(toDate) : null,
+      limit: limit ? Number(limit) : 20,
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: bills.length,
+      bills,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get bills",
+    });
+  }
+};
+
+export const getBillsSummary = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "User is not authenticated",
+      });
+    }
+
+    const summary = await getBillsSummaryService({
+      walletId: req.user.walletId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      summary,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get bills summary",
     });
   }
 };

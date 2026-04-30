@@ -1277,3 +1277,205 @@ export const createBillService = async ({
     client.release();
   }
 };
+
+
+export const getBillsService = async ({
+  walletId,
+  categoryId,
+  status,
+  source,
+  fromDate,
+  toDate,
+  limit,
+}: {
+  walletId: number;
+  categoryId: number | null;
+  status: string | null;
+  source: string | null;
+  fromDate: string | null;
+  toDate: string | null;
+  limit: number;
+}) => {
+  const values: any[] = [walletId];
+  let paramIndex = 2;
+
+  let whereClause = `WHERE b.wallet_id = $1`;
+
+  if (categoryId) {
+    whereClause += ` AND b.category_id = $${paramIndex}`;
+    values.push(categoryId);
+    paramIndex++;
+  }
+
+  if (status) {
+    whereClause += ` AND b.status = $${paramIndex}`;
+    values.push(status);
+    paramIndex++;
+  }
+
+  if (source) {
+    whereClause += ` AND b.source = $${paramIndex}`;
+    values.push(source);
+    paramIndex++;
+  }
+
+  if (fromDate) {
+    whereClause += ` AND b.bill_date >= $${paramIndex}`;
+    values.push(fromDate);
+    paramIndex++;
+  }
+
+  if (toDate) {
+    whereClause += ` AND b.bill_date <= $${paramIndex}`;
+    values.push(toDate);
+    paramIndex++;
+  }
+
+  const safeLimit = Number.isNaN(limit) || limit <= 0 ? 20 : Math.min(limit, 100);
+
+  values.push(safeLimit);
+
+  const result = await pool.query(
+    `SELECT
+       b.bill_id AS "billId",
+       b.wallet_id AS "walletId",
+       b.created_by AS "createdBy",
+       u.full_name AS "createdByName",
+       b.category_id AS "categoryId",
+       c.name AS "categoryName",
+       c.is_harmful AS "isHarmful",
+       b.title,
+       b.total_amount AS "totalAmount",
+       b.currency,
+       b.source,
+       b.image_url AS "imageUrl",
+       b.status,
+       b.bill_date AS "billDate",
+       b.created_at AS "createdAt"
+     FROM bill b
+     LEFT JOIN app_user u ON u.user_id = b.created_by
+     LEFT JOIN category c ON c.category_id = b.category_id
+     ${whereClause}
+     ORDER BY b.created_at DESC
+     LIMIT $${paramIndex}`,
+    values
+  );
+
+  return result.rows;
+};
+
+export const getBillsSummaryService = async ({
+  walletId,
+}: {
+  walletId: number;
+}) => {
+  const totalResult = await pool.query(
+    `SELECT
+       COALESCE(SUM(total_amount), 0) AS "totalExpenses",
+       COUNT(*) AS "totalBills"
+     FROM bill
+     WHERE wallet_id = $1`,
+    [walletId]
+  );
+
+  const monthlyResult = await pool.query(
+    `SELECT
+       COALESCE(SUM(total_amount), 0) AS "monthlyExpenses",
+       COUNT(*) AS "monthlyBills"
+     FROM bill
+     WHERE wallet_id = $1
+       AND date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE)`,
+    [walletId]
+  );
+
+  const byCategoryResult = await pool.query(
+    `SELECT
+       c.category_id AS "categoryId",
+       c.name AS "categoryName",
+       c.is_harmful AS "isHarmful",
+       COALESCE(SUM(b.total_amount), 0) AS "totalAmount",
+       COUNT(b.bill_id) AS "billCount"
+     FROM bill b
+     LEFT JOIN category c ON c.category_id = b.category_id
+     WHERE b.wallet_id = $1
+     GROUP BY c.category_id, c.name, c.is_harmful
+     ORDER BY COALESCE(SUM(b.total_amount), 0) DESC`,
+    [walletId]
+  );
+
+  const recentResult = await pool.query(
+    `SELECT
+       b.bill_id AS "billId",
+       b.title,
+       b.total_amount AS "totalAmount",
+       b.currency,
+       b.source,
+       b.status,
+       b.bill_date AS "billDate",
+       b.created_at AS "createdAt",
+       u.full_name AS "createdByName",
+       c.name AS "categoryName"
+     FROM bill b
+     LEFT JOIN app_user u ON u.user_id = b.created_by
+     LEFT JOIN category c ON c.category_id = b.category_id
+     WHERE b.wallet_id = $1
+     ORDER BY b.created_at DESC
+     LIMIT 5`,
+    [walletId]
+  );
+
+  const splitsResult = await pool.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN bs.status = 'PAID' THEN bs.amount_due ELSE 0 END), 0) AS "paidAmount",
+       COALESCE(SUM(CASE WHEN bs.status = 'UNPAID' THEN bs.amount_due ELSE 0 END), 0) AS "unpaidAmount",
+       COUNT(*) FILTER (WHERE bs.status = 'PAID') AS "paidSplits",
+       COUNT(*) FILTER (WHERE bs.status = 'UNPAID') AS "unpaidSplits"
+     FROM bill_split bs
+     JOIN bill b ON b.bill_id = bs.bill_id
+     WHERE b.wallet_id = $1`,
+    [walletId]
+  );
+
+  const total = totalResult.rows[0];
+  const monthly = monthlyResult.rows[0];
+  const splitStats = splitsResult.rows[0];
+
+  return {
+    totalExpenses: Number(total.totalExpenses),
+    totalBills: Number(total.totalBills),
+
+    monthlyExpenses: Number(monthly.monthlyExpenses),
+    monthlyBills: Number(monthly.monthlyBills),
+
+    paidAmount: Number(splitStats.paidAmount),
+    unpaidAmount: Number(splitStats.unpaidAmount),
+    paidSplits: Number(splitStats.paidSplits),
+    unpaidSplits: Number(splitStats.unpaidSplits),
+
+    // لا يوجد budget table عندنا حاليًا، لذلك نرجعها null
+    monthlyBudget: null,
+    remainingBudget: null,
+    budgetUsedPercentage: null,
+
+    spendingByCategory: byCategoryResult.rows.map((row) => ({
+      categoryId: row.categoryId ? Number(row.categoryId) : null,
+      categoryName: row.categoryName || "Uncategorized",
+      isHarmful: row.isHarmful || false,
+      totalAmount: Number(row.totalAmount),
+      billCount: Number(row.billCount),
+    })),
+
+    recentTransactions: recentResult.rows.map((row) => ({
+      billId: Number(row.billId),
+      title: row.title,
+      totalAmount: Number(row.totalAmount),
+      currency: row.currency,
+      source: row.source,
+      status: row.status,
+      billDate: row.billDate,
+      createdAt: row.createdAt,
+      createdByName: row.createdByName,
+      categoryName: row.categoryName || "Uncategorized",
+    })),
+  };
+};

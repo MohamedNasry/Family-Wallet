@@ -43,7 +43,7 @@ export default function FamilyCodeScreen() {
           </View>
         </View>
 
-        <AppButton title="Get Started" onPress={() => router.replace("/(auth)/login")} />
+        <AppButton title="Get Started" onPress={() => router.replace("/(tabs)" as any)} />
       </View>
     </View>
   );
