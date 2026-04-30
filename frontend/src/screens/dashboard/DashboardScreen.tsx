@@ -80,17 +80,17 @@ export default function DashboardScreen() {
 
   const goToAddExpense = () => {
     // router.push("/add-expense" as any);
-    console.log("Go to Add Expense");
-  }
+    //console.log("Go to Add Expense");
+  };
 
   const goToPayments = () => {
-   // router.push("/payments" as any);
-   console.log("Go to Add payments");
+    // router.push("/payments" as any);
+    console.log("Go to Add payments");
   };
 
   const goToParental = () => {
-    //router.push("/parental-control" as any);
-    console.log("Go to  parental");
+    router.push("/parental-control" as any);
+    // console.log("Go to  parental");
   };
 
   const goToKidsView = () => {
@@ -144,15 +144,25 @@ export default function DashboardScreen() {
 
           <View style={styles.quickActions}>
             {(user?.role === "PARENT" || user?.role === "CHILD") && (
-              <TouchableOpacity style={styles.quickButton} onPress={goToKidsView}>
+              <TouchableOpacity
+                style={styles.quickButton}
+                onPress={goToKidsView}
+              >
                 <Ionicons name="happy-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.quickButtonText}>Kids View</Text>
               </TouchableOpacity>
             )}
 
             {user?.role === "PARENT" && (
-              <TouchableOpacity style={styles.quickButton} onPress={goToParental}>
-                <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+              <TouchableOpacity
+                style={styles.quickButton}
+                onPress={goToParental}
+              >
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={18}
+                  color="#FFFFFF"
+                />
                 <Text style={styles.quickButtonText}>Parental</Text>
               </TouchableOpacity>
             )}
@@ -167,7 +177,7 @@ export default function DashboardScreen() {
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>{formatMoney(remaining)}</Text>
             <Text style={styles.balanceHint}>
-              Remaining from this month's budget
+              Remaining from this month’s budget
             </Text>
           </View>
         </LinearGradient>
@@ -181,22 +191,24 @@ export default function DashboardScreen() {
 
             <View style={styles.progressTrack}>
               <View
-                style={[
-                  styles.progressFill,
-                  { width: `${budgetPercentage}%` },
-                ]}
+                style={[styles.progressFill, { width: `${budgetPercentage}%` }]}
               />
             </View>
 
             <Text style={styles.budgetText}>
-              {formatMoney(monthlyExpenses)} used of {formatMoney(monthlyBudget)}
+              {formatMoney(monthlyExpenses)} used of{" "}
+              {formatMoney(monthlyBudget)}
             </Text>
           </View>
 
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <View style={styles.statIconRed}>
-                <Ionicons name="trending-down-outline" size={22} color="#EF4444" />
+                <Ionicons
+                  name="trending-down-outline"
+                  size={22}
+                  color="#EF4444"
+                />
               </View>
               <Text style={styles.statLabel}>Total Expenses</Text>
               <Text style={styles.statValue}>{formatMoney(totalExpenses)}</Text>

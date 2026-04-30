@@ -1,247 +1,415 @@
 import pool from "../../config/db";
-import { accountsInfo, charge } from "../mockBank/mockBank.service";
 
-export const childPointsData = async (childId: number) => {
-    const query = {
-        text: `
-            SELECT points
-            FROM child_points
-            WHERE child_id = ?
-        `
+type UserRole = "PARENT" | "CHILD" | "MEMBER";
+
+const assertChildAccess = async ({
+  childId,
+  authUserId,
+  authWalletId,
+  authRole,
+}: {
+  childId: number;
+  authUserId: number;
+  authWalletId: number;
+  authRole: UserRole;
+}) => {
+  const childResult = await pool.query(
+    `SELECT user_id, wallet_id, full_name, email, role
+     FROM app_user
+     WHERE user_id = $1
+       AND role = 'CHILD'`,
+    [childId]
+  );
+
+  if (childResult.rows.length === 0) {
+    throw new Error("CHILD_NOT_FOUND");
+  }
+
+  const child = childResult.rows[0];
+
+  if (Number(child.wallet_id) !== Number(authWalletId)) {
+    throw new Error("NO_PERMISSION");
+  }
+
+  if (authRole === "CHILD" && Number(authUserId) !== Number(childId)) {
+    throw new Error("NO_PERMISSION");
+  }
+
+  if (authRole === "MEMBER") {
+    throw new Error("NO_PERMISSION");
+  }
+
+  return child;
+};
+
+export const childPointsData = async ({
+  childId,
+  authUserId,
+  authWalletId,
+  authRole,
+}: {
+  childId: number;
+  authUserId: number;
+  authWalletId: number;
+  authRole: UserRole;
+}) => {
+  const child = await assertChildAccess({
+    childId,
+    authUserId,
+    authWalletId,
+    authRole,
+  });
+
+  const result = await pool.query(
+    `SELECT
+       cpw.points_wallet_id AS "pointsWalletId",
+       cpw.child_user_id AS "childUserId",
+       cpw.parent_user_id AS "parentUserId",
+       cpw.points_balance AS "pointsBalance"
+     FROM child_points_wallet cpw
+     WHERE cpw.child_user_id = $1`,
+    [childId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("POINTS_WALLET_NOT_FOUND");
+  }
+
+  return {
+    child: {
+      userId: Number(child.user_id),
+      walletId: Number(child.wallet_id),
+      fullName: child.full_name,
+      email: child.email,
+      role: child.role,
+    },
+    wallet: {
+      ...result.rows[0],
+      pointsBalance: Number(result.rows[0].pointsBalance),
+    },
+  };
+};
+
+export const topUpPoints = async ({
+  childId,
+  parentUserId,
+  parentWalletId,
+  points,
+}: {
+  childId: number;
+  parentUserId: number;
+  parentWalletId: number;
+  points: number;
+}) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const childResult = await client.query(
+      `SELECT user_id, wallet_id, full_name, role
+       FROM app_user
+       WHERE user_id = $1
+         AND role = 'CHILD'
+       FOR UPDATE`,
+      [childId]
+    );
+
+    if (childResult.rows.length === 0) {
+      throw new Error("CHILD_NOT_FOUND");
+    }
+
+    const child = childResult.rows[0];
+
+    if (Number(child.wallet_id) !== Number(parentWalletId)) {
+      throw new Error("NO_PERMISSION");
+    }
+
+    const walletResult = await client.query(
+      `SELECT points_wallet_id, child_user_id, parent_user_id, points_balance
+       FROM child_points_wallet
+       WHERE child_user_id = $1
+       FOR UPDATE`,
+      [childId]
+    );
+
+    if (walletResult.rows.length === 0) {
+      throw new Error("POINTS_WALLET_NOT_FOUND");
+    }
+
+    const wallet = walletResult.rows[0];
+
+    if (Number(wallet.parent_user_id) !== Number(parentUserId)) {
+      throw new Error("UNAUTHORIZED");
+    }
+
+    const oldBalance = Number(wallet.points_balance);
+    const newBalance = oldBalance + points;
+
+    const updatedWalletResult = await client.query(
+      `UPDATE child_points_wallet
+       SET points_balance = $1
+       WHERE points_wallet_id = $2
+       RETURNING
+         points_wallet_id AS "pointsWalletId",
+         child_user_id AS "childUserId",
+         parent_user_id AS "parentUserId",
+         points_balance AS "pointsBalance"`,
+      [newBalance, wallet.points_wallet_id]
+    );
+
+    const transactionResult = await client.query(
+      `INSERT INTO point_transaction (
+         points_wallet_id,
+         child_user_id,
+         points_amount,
+         type
+       )
+       VALUES ($1, $2, $3, 'TOP_UP')
+       RETURNING
+         transaction_id AS "transactionId",
+         points_wallet_id AS "pointsWalletId",
+         child_user_id AS "childUserId",
+         points_amount AS "pointsAmount",
+         type,
+         created_at AS "createdAt"`,
+      [wallet.points_wallet_id, childId, points]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      wallet: {
+        ...updatedWalletResult.rows[0],
+        pointsBalance: Number(updatedWalletResult.rows[0].pointsBalance),
+      },
+      transaction: {
+        ...transactionResult.rows[0],
+        pointsAmount: Number(transactionResult.rows[0].pointsAmount),
+      },
     };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
 
-    const result = await pool.query(query, [childId]);
+export const createSpendPointsApproval = async ({
+  authUserId,
+  authWalletId,
+  authRole,
+  childId,
+  points,
+  title,
+}: {
+  authUserId: number;
+  authWalletId: number;
+  authRole: UserRole;
+  childId: number;
+  points: number;
+  title: string | null;
+}) => {
+  const client = await pool.connect();
 
-    if (result.rows.length === 0) {
-        throw new Error("CHILD_NOT_FOUND");
+  try {
+    await client.query("BEGIN");
+
+    if (authRole === "MEMBER") {
+      throw new Error("NO_PERMISSION");
     }
 
-    return result.rows[0];
-}
-
-export const topUpPoints = async (childId: number, parentUserId: number, points: number) => {
-    const client = await pool.connect();
-
-    try {
-        await client.query("BEGIN");
-        // تحقق من وجود الطفل
-        const childRes = await client.query(
-            "SELECT * FROM app_user WHERE user_id = $1 AND role = 'CHILD' FOR UPDATE",
-            [childId]
-        );
-
-        const child = childRes.rows[0];
-
-        if (!child) {
-            throw new Error("CHILD_NOT_FOUND");
-        }
-
-        // تحقق من وجود محفظة النقاط
-        const walletRes = await client.query(
-            "SELECT * FROM child_points_wallet WHERE child_user_id = $1 FOR UPDATE",
-            [childId]
-        );
-
-        const wallet = walletRes.rows[0];
-
-        if (!wallet) {
-            throw new Error("WALLET_NOT_FOUND");
-        }
-
-        // تحقق من أن الوالد هو صاحب المحفظة
-        if (wallet.parent_user_id !== parentUserId) {
-            throw new Error("UNAUTHORIZED");
-        }
-
-        // شحن النقاط
-        const newBalance = wallet.points_balance + points;
-
-        await client.query(
-            "UPDATE child_points_wallet SET points_balance = $1 WHERE points_wallet_id = $2",
-            [newBalance, wallet.points_wallet_id]
-        );
-
-        // تسجيل المعاملة
-        await client.query(
-            "INSERT INTO point_transaction (points_wallet_id, child_user_id, points_amount, type) VALUES ($1, $2, $3, 'TOP_UP')",
-            [wallet.points_wallet_id, childId, points]
-        );
-
-        await client.query("COMMIT");
-
-        return { points_balance: newBalance };
-    } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-    } finally {
-        client.release();
+    if (authRole === "CHILD" && Number(authUserId) !== Number(childId)) {
+      throw new Error("NO_PERMISSION");
     }
-}
 
-export const spendPoints = async (childId: number, points: number) => {
-    const clint = await pool.connect();
-    try {
-        await clint.query("BEGIN");
-        // تحقق من وجود الطفل
-        const childRes = await clint.query(
-            "SELECT * FROM app_user WHERE user_id = ? AND role = 'CHILD'",
-            [childId]
-        );
+    const childResult = await client.query(
+      `SELECT user_id, wallet_id, full_name, role
+       FROM app_user
+       WHERE user_id = $1
+         AND role = 'CHILD'`,
+      [childId]
+    );
 
-        const child = childRes.rows[0];
-
-        if (!child) {
-            throw new Error("CHILD_NOT_FOUND");
-        }
-
-        // تحقق من وجود محفظة النقاط 
-        const pointWalletRes = await clint.query(
-            "SELECT * FROM child_points_wallet WHERE child_user_id = ?",
-            [childId]
-        );
-
-        const pointWallet = pointWalletRes.rows[0];
-
-        if (!pointWallet) {
-            throw new Error("WALLET_NOT_FOUND");
-        }
-
-        // تحقق من وجود نقاط كافية
-        if (pointWallet.points_balance < points) {
-            throw new Error("INSUFFICIENT_POINTS");
-        }
-
-        // التحقق ان حساب الوالد مرتبط بمحفظة الطفل
-        const parent_user_id = pointWallet.parent_user_id;
-
-        const parentDataRes = await clint.query(
-            "SELECT * FROM app_user WHERE user_id = ? AND role = 'PARENT'",
-            [parent_user_id]
-        );
-
-        // تحقق من وجود الوالد
-        if (parentDataRes.rows.length === 0) {
-            throw new Error("PARENT_NOT_FOUND");
-        }
-
-        // جلب محفظة العائلة
-        const familyWalletId = parentDataRes.rows[0].wallet_id;
-
-        const familyWalletRes = await clint.query(
-            "SELECT * FROM family_wallet WHERE wallet_id = ?",
-            [familyWalletId]
-        );
-
-        const familyWallet = familyWalletRes.rows[0];
-
-        if (!familyWallet) {
-            throw new Error("FAMILY_WALLET_NOT_FOUND");
-        }
-
-        // جلب العملة من محفظة العائلة
-        const currency = familyWallet.currency;
-
-        // جلب حسابات الوالد البنكية
-        const parentBankAcounts = await accountsInfo(parent_user_id);
-
-        if (parentBankAcounts.length === 0) {
-            throw new Error("PARENT_WALLET_NOT_FOUND");
-        }
-
-        const parentWallet = parentBankAcounts.find((acc) => acc.is_default);
-
-        if (!parentWallet) {
-            throw new Error("PARENT_WALLET_NOT_FOUND");
-        }
-
-        const costPerPoint = 0.1; // افتراضياً 1 نقطة تساوي 0.1 دولار
-        const totalCost = points * costPerPoint;
-
-        if (parentWallet.balance < totalCost) {
-            throw new Error("PARENT_INSUFFICIENT_FUNDS");
-        }
-
-        // خصم النقاط من محفظة الطفل
-        const newBalance = pointWallet.points_balance - points;
-        await clint.query(
-            "UPDATE child_points_wallet SET points_balance = ? WHERE points_wallet_id = ?",
-            [newBalance, pointWallet.points_wallet_id]
-        );
-
-        // انشاء الفئة اذا كانت غير موجودة
-        const categoryRes = await clint.query(
-            "SELECT * FROM category WHERE name = ? AND wallet_id = ?",
-            ["POINTS_SPEND", familyWalletId]
-        );
-
-        let category;
-
-        if (categoryRes.rows.length === 0) {
-            const insertCategoryRes = await clint.query(
-                "INSERT INTO category (wallet_id, name) VALUES (?, ?, ?)",
-                [familyWalletId, "POINTS_SPEND", "red"]
-            );
-            category = insertCategoryRes.rows[0].category_id;
-        } else {
-            category = categoryRes.rows[0].category_id;
-        }
-
-        // إنشاء فاتورة في النظام
-
-        const billRes = await clint.query(
-            `INSERT INTO bill (wallet_id, category_id, title, total_amount, currency, source, bill_date)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
-            RETURNING bill_id`,
-            [familyWalletId, category, `Purchase ${points} points for child ${childId}`, totalCost, currency, "POINTS_SPEND"]
-        );
-
-        const billId = billRes.rows[0].bill_id;
-
-        // خصم المال من حساب الوالد
-        await charge(parent_user_id, parentWallet.bank_account_id, billId, totalCost);
-
-        await clint.query("COMMIT");
-
-        return { points_balance: newBalance };
-    } catch (err: any) {
-        await clint.query("ROLLBACK");
-        if (err.message === "CHILD_NOT_FOUND") {
-            throw new Error("CHILD_NOT_FOUND");
-        } else if (err.message === "WALLET_NOT_FOUND") {
-            throw new Error("WALLET_NOT_FOUND");
-        } else if (err.message === "INSUFFICIENT_POINTS") {
-            throw new Error("INSUFFICIENT_POINTS");
-        } else if (err.message === "PARENT_WALLET_NOT_FOUND") {
-            throw new Error("PARENT_WALLET_NOT_FOUND");
-        } else if (err.message === "PARENT_INSUFFICIENT_FUNDS") {
-            throw new Error("PARENT_INSUFFICIENT_FUNDS");
-        }
-        throw err;
-    } finally {
-        clint.release();
+    if (childResult.rows.length === 0) {
+      throw new Error("CHILD_NOT_FOUND");
     }
-}
 
-export const transactionHistory = async (childId: number) => {
-    const clint = await pool.connect();
-    try {
-        const query = {
-            text: `
-                SELECT points_amount, type, created_at FROM point_transaction WHERE child_user_id = $1 ORDER BY created_at DESC
-            `,
-            values: [childId]
-        };
-        const result = await clint.query(query);
+    const child = childResult.rows[0];
 
-        if (result.rows.length === 0) {
-            throw new Error("NO_TRANSACTIONS_FOUND");
-        }
-
-        return result.rows;
-    } catch (err) {
-        clint.query("ROLLBACK");
-        throw err;
-    } finally {
-        clint.release();
+    if (Number(child.wallet_id) !== Number(authWalletId)) {
+      throw new Error("NO_PERMISSION");
     }
+
+    const pointsWalletResult = await client.query(
+      `SELECT points_wallet_id, child_user_id, parent_user_id, points_balance
+       FROM child_points_wallet
+       WHERE child_user_id = $1
+       FOR UPDATE`,
+      [childId]
+    );
+
+    if (pointsWalletResult.rows.length === 0) {
+      throw new Error("POINTS_WALLET_NOT_FOUND");
+    }
+
+    const pointsWallet = pointsWalletResult.rows[0];
+
+    if (Number(pointsWallet.points_balance) < points) {
+      throw new Error("INSUFFICIENT_POINTS");
+    }
+
+    const parentResult = await client.query(
+      `SELECT user_id, wallet_id, full_name, role
+       FROM app_user
+       WHERE user_id = $1
+         AND role = 'PARENT'`,
+      [pointsWallet.parent_user_id]
+    );
+
+    if (parentResult.rows.length === 0) {
+      throw new Error("PARENT_NOT_FOUND");
+    }
+
+    const parent = parentResult.rows[0];
+
+    if (Number(parent.wallet_id) !== Number(authWalletId)) {
+      throw new Error("NO_PERMISSION");
+    }
+
+    const familyWalletResult = await client.query(
+      `SELECT wallet_id, currency
+       FROM family_wallet
+       WHERE wallet_id = $1`,
+      [authWalletId]
+    );
+
+    if (familyWalletResult.rows.length === 0) {
+      throw new Error("FAMILY_WALLET_NOT_FOUND");
+    }
+
+    const currency = familyWalletResult.rows[0].currency;
+
+    const costPerPoint = 0.1;
+    const totalCost = Number((points * costPerPoint).toFixed(2));
+
+    let categoryId: number;
+
+    const categoryResult = await client.query(
+      `SELECT category_id
+       FROM category
+       WHERE LOWER(name) = LOWER($1)
+       LIMIT 1`,
+      ["POINTS_SPEND"]
+    );
+
+    if (categoryResult.rows.length > 0) {
+      categoryId = Number(categoryResult.rows[0].category_id);
+    } else {
+      const insertCategoryResult = await client.query(
+        `INSERT INTO category (name, is_harmful)
+         VALUES ($1, $2)
+         RETURNING category_id`,
+        ["POINTS_SPEND", false]
+      );
+
+      categoryId = Number(insertCategoryResult.rows[0].category_id);
+    }
+
+    const approvalResult = await client.query(
+      `INSERT INTO parental_approval_request (
+         wallet_id,
+         child_id,
+         category_id,
+         title,
+         amount,
+         currency,
+         status
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+       RETURNING
+         approval_id AS "approvalId",
+         wallet_id AS "walletId",
+         child_id AS "childId",
+         category_id AS "categoryId",
+         title,
+         amount,
+         currency,
+         status,
+         requested_at AS "requestedAt"`,
+      [
+        authWalletId,
+        childId,
+        categoryId,
+        title || `Spend ${points} points`,
+        totalCost,
+        currency,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      approval: {
+        ...approvalResult.rows[0],
+        amount: Number(approvalResult.rows[0].amount),
+      },
+      pointsRequest: {
+        childId,
+        childName: child.full_name,
+        points,
+        costPerPoint,
+        totalCost,
+        currentPointsBalance: Number(pointsWallet.points_balance),
+      },
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const transactionHistory = async ({
+  childId,
+  authUserId,
+  authWalletId,
+  authRole,
+}: {
+  childId: number;
+  authUserId: number;
+  authWalletId: number;
+  authRole: UserRole;
+}) => {
+  await assertChildAccess({
+    childId,
+    authUserId,
+    authWalletId,
+    authRole,
+  });
+
+  const result = await pool.query(
+    `SELECT
+       transaction_id AS "transactionId",
+       points_wallet_id AS "pointsWalletId",
+       child_user_id AS "childUserId",
+       points_amount AS "pointsAmount",
+       type,
+       created_at AS "createdAt"
+     FROM point_transaction
+     WHERE child_user_id = $1
+     ORDER BY created_at DESC`,
+    [childId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("NO_TRANSACTIONS_FOUND");
+  }
+
+  return result.rows.map((row) => ({
+    ...row,
+    pointsAmount: Number(row.pointsAmount),
+  }));
 };

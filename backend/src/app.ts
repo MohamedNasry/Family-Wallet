@@ -7,6 +7,8 @@ import billRoutes from "./modules/bills/bills.routes";
 import splitRoutes from "./modules/splits/splits.routes";
 import cors from "cors";
 import pointsRoutes from "./modules/childrenPoints/childrenPoints.routes";
+import categoryRoutes from "./modules/categories/categories.routes";
+import parentalRoutes from "./modules/parental/parental.routes";
 
 const app = express();
 
@@ -28,5 +30,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/mock-bank", mockBankRouter);
 app.use("/api/families", familyRoutes);
 app.use("/api/points", pointsRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/parental", parentalRoutes);
 
 export default app;
