@@ -5,14 +5,19 @@ import mockBankRouter from "./modules/mockBank/mockBank.routes";
 import familyRoutes from "./modules/families/family.routes";
 import billRoutes from "./modules/bills/bills.routes";
 import splitRoutes from "./modules/splits/splits.routes";
+import cors from "cors";
 import pointsRoutes from "./modules/childrenPoints/childrenPoints.routes";
-
 
 const app = express();
 
 app.use(express.json());
 
-
+app.use(
+  cors({
+    origin: ["http://localhost:8081", "http://localhost:19006"],
+    credentials: true,
+  })
+);
 
 app.use("/uploads", express.static("uploads"));
 
