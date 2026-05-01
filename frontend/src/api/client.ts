@@ -2,28 +2,26 @@ import { getToken } from "../utils/tokenStorage";
 
 export const BASE_URL = "http://localhost:5000";
 
-type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
-  body?: unknown;
-  token?: string | null;
+type ApiRequestOptions = {
+  method?: string;
+  body?: any;
   isFormData?: boolean;
 };
 
-export const apiRequest = async <T>(
+export const apiRequest = async <T = any>(
   endpoint: string,
-  options: RequestOptions = {}
+  options: ApiRequestOptions = {}
 ): Promise<T> => {
-  const storedToken = await getToken();
-  const token = options.token ?? storedToken;
+  const token = await getToken();
 
   const headers: Record<string, string> = {};
 
-  if (!options.isFormData) {
-    headers["Content-Type"] = "application/json";
-  }
-
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (!options.isFormData) {
+    headers["Content-Type"] = "application/json";
   }
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {
@@ -31,7 +29,7 @@ export const apiRequest = async <T>(
     headers,
     body: options.body
       ? options.isFormData
-        ? (options.body as FormData)
+        ? options.body
         : JSON.stringify(options.body)
       : undefined,
   });
@@ -39,8 +37,8 @@ export const apiRequest = async <T>(
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || "API request failed");
+    throw new Error(data.message || data.error || "Request failed");
   }
 
-  return data as T;
+  return data;
 };

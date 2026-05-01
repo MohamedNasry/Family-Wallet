@@ -1,5 +1,6 @@
 export type Family = {
   familyId: number;
+  walletId?: number;
   name: string;
   country: string;
   currency: string;
@@ -15,6 +16,7 @@ export type FamilyMember = {
   role: "PARENT" | "CHILD" | "MEMBER";
   joinedAt?: string;
 };
+
 
 export type FamilyMembersResponse = {
   success: boolean;
