@@ -2,6 +2,8 @@ import pool from "../../config/db";
 
 type UserRole = "PARENT" | "CHILD" | "MEMBER";
 
+
+
 export const accountsInfo = async ({
   requestedUserId,
   authUserId,
@@ -140,94 +142,220 @@ export const createBankAccountService = async ({
   }
 };
 
+
+const recalculateBillStatus = async (client: any, billId: number) => {
+  const splitStatsResult = await client.query(
+    `SELECT
+       COUNT(*)::int AS total_splits,
+       COUNT(*) FILTER (WHERE status = 'PAID')::int AS paid_splits
+     FROM bill_split
+     WHERE bill_id = $1`,
+    [billId]
+  );
+
+  const totalSplits = Number(splitStatsResult.rows[0].total_splits);
+  const paidSplits = Number(splitStatsResult.rows[0].paid_splits);
+
+  let newStatus = "PENDING";
+
+  if (totalSplits === 0) {
+    newStatus = "PAID";
+  } else if (paidSplits === totalSplits) {
+    newStatus = "PAID";
+  } else if (paidSplits > 0) {
+    newStatus = "PARTIAL";
+  } else {
+    newStatus = "PENDING";
+  }
+
+  const billResult = await client.query(
+    `UPDATE bill
+     SET status = $1
+     WHERE bill_id = $2
+     RETURNING
+       bill_id AS "billId",
+       title,
+       total_amount AS "totalAmount",
+       currency,
+       status`,
+    [newStatus, billId]
+  );
+
+  return billResult.rows[0];
+};
+
 export const charge = async ({
-  userId,
-  walletId,
-  bankAccountId,
-  billId,
+  authUserId,
+  bankAccountID,
+  billID,
   cost,
+  splitID,
 }: {
-  userId: number;
-  walletId: number;
-  bankAccountId: number;
-  billId: number;
+  authUserId: number;
+  bankAccountID: number;
+  billID: number;
   cost: number;
+  splitID?: number | null;
 }) => {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    const bankResult = await client.query(
-      `SELECT
-         bank_account_id,
-         user_id,
-         balance
-       FROM bank_account
-       WHERE bank_account_id = $1
-         AND user_id = $2
-       FOR UPDATE`,
-      [bankAccountId, userId]
+    // 1. Lock bank account
+    const accountResult = await client.query(
+      `
+      SELECT
+        bank_account_id,
+        user_id,
+        bank_name,
+        masked_card_number,
+        is_default,
+        balance
+      FROM bank_account
+      WHERE bank_account_id = $1
+        AND user_id = $2
+      FOR UPDATE
+      `,
+      [bankAccountID, authUserId]
     );
 
-    if (bankResult.rows.length === 0) {
+    if (accountResult.rows.length === 0) {
       throw new Error("BANK_ACCOUNT_NOT_FOUND");
     }
 
-    const bank = bankResult.rows[0];
-    const currentBalance = Number(bank.balance);
+    const account = accountResult.rows[0];
 
-    if (currentBalance < cost) {
-      throw new Error("INSUFFICIENT_BALANCE");
-    }
-
+    // 2. Lock bill
     const billResult = await client.query(
-      `SELECT bill_id, wallet_id, total_amount
-       FROM bill
-       WHERE bill_id = $1
-         AND wallet_id = $2`,
-      [billId, walletId]
+      `
+      SELECT
+        bill_id,
+        wallet_id,
+        total_amount,
+        status
+      FROM bill
+      WHERE bill_id = $1
+      FOR UPDATE
+      `,
+      [billID]
     );
 
     if (billResult.rows.length === 0) {
       throw new Error("BILL_NOT_FOUND");
     }
 
+    let chargeAmount = Number(cost);
+    let split = null;
+
+    // 3. إذا أرسلنا splitID، نستعمل amount_due من database وليس من frontend
+    // هذا أكثر أمانًا، لأن المستخدم لا يستطيع تغيير المبلغ من الواجهة.
+    if (splitID) {
+      const splitResult = await client.query(
+        `
+        SELECT
+          split_id,
+          bill_id,
+          user_id,
+          amount_due,
+          status
+        FROM bill_split
+        WHERE split_id = $1
+          AND bill_id = $2
+          AND user_id = $3
+        FOR UPDATE
+        `,
+        [splitID, billID, authUserId]
+      );
+
+      if (splitResult.rows.length === 0) {
+        throw new Error("SPLIT_NOT_FOUND");
+      }
+
+      split = splitResult.rows[0];
+
+      if (split.status === "PAID") {
+        throw new Error("SPLIT_ALREADY_PAID");
+      }
+
+      chargeAmount = Number(split.amount_due);
+    }
+
+    // 4. Check balance
+    if (Number(account.balance) < chargeAmount) {
+      throw new Error("INSUFFICIENT_BALANCE");
+    }
+
+    // 5. Decrease bank balance
     const updatedAccountResult = await client.query(
-      `UPDATE bank_account
-       SET balance = balance - $1
-       WHERE bank_account_id = $2
-       RETURNING
-         bank_account_id AS "bankAccountId",
-         user_id AS "userId",
-         bank_name AS "bankName",
-         masked_card_number AS "cardNumber",
-         is_default AS "isDefault",
-         balance`,
-      [cost, bankAccountId]
+      `
+      UPDATE bank_account
+      SET balance = balance - $1
+      WHERE bank_account_id = $2
+        AND user_id = $3
+      RETURNING
+        bank_account_id AS "bankAccountId",
+        user_id AS "userId",
+        bank_name AS "bankName",
+        masked_card_number AS "maskedCardNumber",
+        is_default AS "isDefault",
+        balance
+      `,
+      [chargeAmount, bankAccountID, authUserId]
     );
 
+    // 6. Mark split as PAID إذا كان الدفع متعلقًا بـ split
+    let updatedSplit = null;
+
+    if (splitID) {
+      const updatedSplitResult = await client.query(
+        `
+        UPDATE bill_split
+        SET status = 'PAID'
+        WHERE split_id = $1
+        RETURNING
+          split_id AS "splitId",
+          bill_id AS "billId",
+          user_id AS "userId",
+          split_type AS "splitType",
+          percentage,
+          fixed_amount AS "fixedAmount",
+          amount_due AS "amountDue",
+          status
+        `,
+        [splitID]
+      );
+
+      updatedSplit = updatedSplitResult.rows[0];
+    }
+
+    // 7. Insert payment record
+    // إذا عندك payment table بأعمدة مختلفة، عدّل هذه query فقط.
     const paymentResult = await client.query(
-      `INSERT INTO payment (
-         bill_id,
-         user_id,
-         amount,
-         method
-       )
-       VALUES ($1, $2, $3, $4)
-       RETURNING
-         payment_id AS "paymentId",
-         bill_id AS "billId",
-         user_id AS "userId",
-         amount,
-         method`,
-      [billId, userId, cost, "BANK"]
+      `
+      INSERT INTO payment (
+        bill_id,
+        user_id,
+        amount,
+        method
+      )
+      VALUES ($1, $2, $3, 'BANK')
+      RETURNING *
+      `,
+      [billID, authUserId, chargeAmount]
     );
+
+    // 8. Update bill status: PENDING / PARTIAL / PAID
+    const updatedBill = await recalculateBillStatus(client, billID);
 
     await client.query("COMMIT");
 
     return {
+      success: true,
+      message: "Payment charged successfully",
       account: updatedAccountResult.rows[0],
+      split: updatedSplit,
+      bill: updatedBill,
       payment: paymentResult.rows[0],
     };
   } catch (error) {
@@ -239,54 +367,75 @@ export const charge = async ({
 };
 
 export const refund = async ({
-  userId,
-  paymentId,
-  bankAccountId,
+  authUserId,
+  bankAccountID,
+  billID,
+  cost,
+  splitID,
 }: {
-  userId: number;
-  paymentId: number;
-  bankAccountId: number;
+  authUserId: number;
+  bankAccountID: number;
+  billID: number;
+  cost: number;
+  splitID?: number | null;
 }) => {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    const paymentResult = await client.query(
-      `SELECT payment_id, bill_id, user_id, amount, method
-       FROM payment
-       WHERE payment_id = $1
-       FOR UPDATE`,
-      [paymentId]
-    );
-
-    if (paymentResult.rows.length === 0) {
-      throw new Error("PAYMENT_NOT_FOUND");
-    }
-
-    const payment = paymentResult.rows[0];
-
-    if (Number(payment.user_id) !== Number(userId)) {
-      throw new Error("NO_PERMISSION");
-    }
-
-    const bankResult = await client.query(
-      `SELECT bank_account_id, user_id, balance
+    const accountResult = await client.query(
+      `SELECT
+         bank_account_id,
+         user_id,
+         balance
        FROM bank_account
        WHERE bank_account_id = $1
          AND user_id = $2
        FOR UPDATE`,
-      [bankAccountId, userId]
+      [bankAccountID, authUserId]
     );
 
-    if (bankResult.rows.length === 0) {
+    if (accountResult.rows.length === 0) {
       throw new Error("BANK_ACCOUNT_NOT_FOUND");
+    }
+
+    const billResult = await client.query(
+      `SELECT bill_id, status
+       FROM bill
+       WHERE bill_id = $1
+       FOR UPDATE`,
+      [billID]
+    );
+
+    if (billResult.rows.length === 0) {
+      throw new Error("BILL_NOT_FOUND");
+    }
+
+    if (splitID) {
+      await client.query(
+        `UPDATE bill_split
+         SET status = 'UNPAID'
+         WHERE split_id = $1
+           AND bill_id = $2
+           AND user_id = $3`,
+        [splitID, billID, authUserId]
+      );
+    } else {
+      await client.query(
+        `UPDATE bill_split
+         SET status = 'UNPAID'
+         WHERE bill_id = $1
+           AND user_id = $2`,
+        [billID, authUserId]
+      );
     }
 
     const updatedAccountResult = await client.query(
       `UPDATE bank_account
        SET balance = balance + $1
        WHERE bank_account_id = $2
+         AND user_id = $3
        RETURNING
          bank_account_id AS "bankAccountId",
          user_id AS "userId",
@@ -294,14 +443,18 @@ export const refund = async ({
          masked_card_number AS "cardNumber",
          is_default AS "isDefault",
          balance`,
-      [payment.amount, bankAccountId]
+      [cost, bankAccountID, authUserId]
     );
+
+    const updatedBill = await recalculateBillStatus(client, billID);
 
     await client.query("COMMIT");
 
     return {
-      refundedAmount: Number(payment.amount),
+      success: true,
+      message: "Payment refunded successfully",
       account: updatedAccountResult.rows[0],
+      bill: updatedBill,
     };
   } catch (error) {
     await client.query("ROLLBACK");

@@ -12,7 +12,7 @@ import type {
 } from "../types/bill.types";
 
 export const getBillsApi = async (): Promise<BillsResponse> => {
-  return apiRequest<BillsResponse>("/api/bills?limit=5", {
+  return apiRequest<BillsResponse>("/api/bills", {
     method: "GET",
   });
 };

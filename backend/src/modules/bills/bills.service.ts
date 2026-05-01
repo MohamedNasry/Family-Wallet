@@ -1,5 +1,5 @@
 import pool from "../../config/db";
-import Tesseract from "tesseract.js";
+import { createWorker, PSM } from "tesseract.js";
 
 type SplitType = "EQUAL" | "PERCENTAGE" | "FIXED";
 type UserRole = "PARENT" | "CHILD" | "MEMBER";
@@ -926,17 +926,42 @@ export const processBillOcrService = async ({
 
   const walletCurrency = walletResult.rows[0]?.currency || "MAD";
 
-  const ocrLanguages = process.env.OCR_LANGS || "eng+ara+fra";
+  // للغة العربية فقط استعمل ara
+  // لو تريد قراءة أرقام/رموز مثل F-2026 بشكل أفضل استعمل ara+eng
+  const ocrLanguages = process.env.OCR_LANGS || "ara+eng";
 
-  const ocrResult = await Tesseract.recognize(file.path, ocrLanguages);
+  const languages = ocrLanguages
+    .split("+")
+    .map((lang) => lang.trim())
+    .filter(Boolean);
 
-  const extractedText = ocrResult.data.text || "";
+  let extractedText = "";
+
+  const worker = await createWorker(languages);
+
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.AUTO,
+      preserve_interword_spaces: "1",
+    });
+
+    const result = await worker.recognize(file.path);
+
+    extractedText = result.data.text || "";
+  } finally {
+    await worker.terminate();
+  }
+
+  if (!extractedText.trim()) {
+    throw new Error("OCR_NO_TEXT_FOUND");
+  }
 
   const extractedTotal = parseTotalAmountFromText(extractedText);
   const extractedCurrency =
     parseCurrencyFromText(extractedText, walletCurrency) || walletCurrency;
+
   const extractedDate = parseDateFromText(extractedText);
-  const extractedTitle = parseTitleFromText(extractedText) || "OCR Bill";
+  const extractedTitle = parseTitleFromText(extractedText) || "فاتورة OCR";
   const guessedCategoryId = await guessCategoryIdFromText(extractedText);
 
   const ocrDraftResult = await pool.query(
@@ -987,6 +1012,7 @@ export const processBillOcrService = async ({
       billDate: extractedDate,
       categoryId: guessedCategoryId,
     },
+    rawOcrText: extractedText,
     supportedArabCurrencies: ARAB_CURRENCY_CODES,
     review: {
       message:

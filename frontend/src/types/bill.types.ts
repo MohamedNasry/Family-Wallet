@@ -142,18 +142,20 @@ export type CreateBillResponse = {
 export type SplitBillPayload =
   | {
       splitType: "EQUAL";
-      userIds: number[];
+      participants: {
+        userId: number;
+      }[];
     }
   | {
       splitType: "PERCENTAGE";
-      splits: {
+      participants: {
         userId: number;
         percentage: number;
       }[];
     }
   | {
       splitType: "FIXED";
-      splits: {
+      participants: {
         userId: number;
         fixedAmount: number;
       }[];
