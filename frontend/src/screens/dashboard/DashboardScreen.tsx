@@ -28,6 +28,8 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const userRole = String(user?.role || "").toUpperCase();
+
   const currency = family?.currency || "MAD";
 
   const monthlyBudget = Number(summary?.monthlyBudget ?? 5000);
@@ -95,8 +97,7 @@ export default function DashboardScreen() {
   };
 
   const goToKidsView = () => {
-    console.log("Go to kids");
-   
+    router.push("/kids-view" as any);
   };
 
   const goToAllTransactions = () => {
@@ -108,6 +109,41 @@ export default function DashboardScreen() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#08C742" />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
+
+  if (userRole === "CHILD") {
+    return (
+      <View style={styles.root}>
+        <LinearGradient
+          colors={["#06C957", "#1588F2"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.childOnlyContainer}
+        >
+          <View style={styles.childCard}>
+            <View style={styles.childIconBox}>
+              <Ionicons name="happy-outline" size={58} color="#B63DF5" />
+            </View>
+
+            <Text style={styles.childTitle}>Kids View</Text>
+
+            <Text style={styles.childSubtitle}>
+              Welcome {user?.fullName || "Kid"}! You can access only your kids
+              area.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.childButton}
+              onPress={goToKidsView}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="happy-outline" size={22} color="#FFFFFF" />
+              <Text style={styles.childButtonText}>Open Kids View</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
       </View>
     );
   }
@@ -131,7 +167,7 @@ export default function DashboardScreen() {
             <Text style={styles.headerTitle}>Family Wallet</Text>
 
             <View style={styles.quickActions}>
-              {(user?.role === "PARENT" || user?.role === "CHILD") && (
+              {userRole === "PARENT" && (
                 <TouchableOpacity
                   style={[styles.quickButton, styles.kidsButton]}
                   onPress={goToKidsView}
@@ -141,7 +177,7 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               )}
 
-              {user?.role === "PARENT" && (
+              {userRole === "PARENT" && (
                 <TouchableOpacity
                   style={[styles.quickButton, styles.parentalButton]}
                   onPress={goToParental}
@@ -151,13 +187,15 @@ export default function DashboardScreen() {
                 </TouchableOpacity>
               )}
 
-              <TouchableOpacity
-                style={[styles.quickButton, styles.paymentsButton]}
-                onPress={goToPayments}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.quickButtonText}>Payments</Text>
-              </TouchableOpacity>
+              {(userRole === "PARENT" || userRole === "MEMBER") && (
+                <TouchableOpacity
+                  style={[styles.quickButton, styles.paymentsButton]}
+                  onPress={goToPayments}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.quickButtonText}>Payments</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
@@ -268,9 +306,11 @@ export default function DashboardScreen() {
         </View>
       </ScrollView>
 
-      <TouchableOpacity style={styles.floatingButton} onPress={goToAddExpense}>
-        <Ionicons name="add" size={34} color="#FFFFFF" />
-      </TouchableOpacity>
+      {userRole !== "CHILD" && (
+        <TouchableOpacity style={styles.floatingButton} onPress={goToAddExpense}>
+          <Ionicons name="add" size={34} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -297,6 +337,63 @@ const styles = StyleSheet.create({
     color: "#102E59",
     fontSize: 16,
     fontWeight: "600",
+  },
+
+  childOnlyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+
+  childCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 30,
+    padding: 28,
+    alignItems: "center",
+  },
+
+  childIconBox: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: "#F3E8FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+
+  childTitle: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#102E59",
+  },
+
+  childSubtitle: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 23,
+  },
+
+  childButton: {
+    marginTop: 26,
+    height: 62,
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#B63DF5",
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  childButtonText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
   },
 
   header: {
