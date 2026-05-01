@@ -291,7 +291,16 @@ export const processBillOcr = async (req: AuthRequest, res: Response) => {
       message: "OCR processed successfully",
       ...data,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "OCR_NO_TEXT_FOUND") {
+      return res.status(400).json({
+        success: false,
+        message: "No readable text found in the uploaded image",
+      });
+    }
+  
+    console.error("OCR error:", error);
+  
     return res.status(500).json({
       success: false,
       message: "Failed to process OCR",

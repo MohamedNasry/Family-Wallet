@@ -19,3 +19,28 @@ export type SplitParticipant = {
   percentage?: number;
   fixedAmount?: number;
 };
+
+export type MySplit = {
+  splitId: number;
+  billId: number;
+  billTitle: string;
+  billTotal: number;
+  currency: string;
+  billStatus: string;
+  categoryName: string | null;
+  userId: number;
+  userName: string;
+  splitType: "EQUAL" | "PERCENTAGE" | "FIXED";
+  percentage: number | null;
+  fixedAmount: number | null;
+  amountDue: number;
+  status: "UNPAID" | "PAID";
+  billDate?: string | null;
+  createdAt?: string;
+};
+
+export type MySplitsResponse = {
+  success: boolean;
+  count: number;
+  splits: MySplit[];
+};
