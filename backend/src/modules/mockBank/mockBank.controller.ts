@@ -119,6 +119,9 @@ export const getAccountInfo = async (req: AuthRequest, res: Response) => {
   }
 };
 
+
+
+
 export const postCharge = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) {
@@ -128,49 +131,79 @@ export const postCharge = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const { bankAccountID, billID, cost } = req.body;
+    const bankAccountID = Number(req.body.bankAccountID);
+    const billID = Number(req.body.billID);
+    const cost = Number(req.body.cost);
 
-    if (
-      bankAccountID === undefined ||
-      billID === undefined ||
-      cost === undefined
-    ) {
+    // جديد: اختياري
+    const splitID = req.body.splitID ? Number(req.body.splitID) : null;
+
+    if (!bankAccountID || Number.isNaN(bankAccountID)) {
       return res.status(400).json({
         success: false,
-        message: "bankAccountID, billID and cost are required",
+        message: "Invalid bankAccountID",
       });
     }
 
-    const parsedBankAccountID = Number(bankAccountID);
-    const parsedBillID = Number(billID);
-    const parsedCost = Number(cost);
-
-    if (
-      !parsedBankAccountID ||
-      !parsedBillID ||
-      Number.isNaN(parsedCost) ||
-      parsedCost <= 0
-    ) {
+    if (!billID || Number.isNaN(billID)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid input values",
+        message: "Invalid billID",
       });
     }
 
-    const data = await charge({
-      userId: req.user.userId,
-      walletId: req.user.walletId,
-      bankAccountId: parsedBankAccountID,
-      billId: parsedBillID,
-      cost: parsedCost,
+    if (!cost || Number.isNaN(cost) || cost <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid cost",
+      });
+    }
+
+    if (req.body.splitID && (!splitID || Number.isNaN(splitID))) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid splitID",
+      });
+    }
+
+    const result = await charge({
+      authUserId: req.user.userId,
+      bankAccountID,
+      billID,
+      cost,
+      splitID,
     });
 
-    return res.status(201).json({
-      success: true,
-      message: "Charge completed successfully",
-      ...data,
-    });
+    return res.status(200).json(result);
   } catch (error: any) {
+    if (error.message === "BANK_ACCOUNT_NOT_FOUND") {
+      return res.status(404).json({
+        success: false,
+        message: "Bank account not found",
+      });
+    }
+
+    if (error.message === "BILL_NOT_FOUND") {
+      return res.status(404).json({
+        success: false,
+        message: "Bill not found",
+      });
+    }
+
+    if (error.message === "SPLIT_NOT_FOUND") {
+      return res.status(404).json({
+        success: false,
+        message: "Split not found for this user",
+      });
+    }
+
+    if (error.message === "SPLIT_ALREADY_PAID") {
+      return res.status(400).json({
+        success: false,
+        message: "This split is already paid",
+      });
+    }
+
     if (error.message === "INSUFFICIENT_BALANCE") {
       return res.status(400).json({
         success: false,
@@ -178,6 +211,59 @@ export const postCharge = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    return res.status(500).json({
+      success: false,
+      message: "Failed to charge payment",
+      error: error.message,
+    });
+  }
+};
+
+export const postRefund = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "User is not authenticated",
+      });
+    }
+
+    const bankAccountID = Number(req.body.bankAccountID);
+    const billID = Number(req.body.billID);
+    const cost = Number(req.body.cost);
+    const splitID = req.body.splitID ? Number(req.body.splitID) : null;
+
+    if (!bankAccountID || Number.isNaN(bankAccountID)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid bankAccountID",
+      });
+    }
+
+    if (!billID || Number.isNaN(billID)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid billID",
+      });
+    }
+
+    if (!cost || Number.isNaN(cost) || cost <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid cost",
+      });
+    }
+
+    const result = await refund({
+      authUserId: req.user.userId,
+      bankAccountID,
+      billID,
+      cost,
+      splitID,
+    });
+
+    return res.status(200).json(result);
+  } catch (error: any) {
     if (error.message === "BANK_ACCOUNT_NOT_FOUND") {
       return res.status(404).json({
         success: false,
@@ -194,75 +280,7 @@ export const postCharge = async (req: AuthRequest, res: Response) => {
 
     return res.status(500).json({
       success: false,
-      message: "Charge failed",
-    });
-  }
-};
-
-export const postRefund = async (req: AuthRequest, res: Response) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: "User is not authenticated",
-      });
-    }
-
-    const { paymentID, bankAccountID } = req.body;
-
-    if (paymentID === undefined || bankAccountID === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "paymentID and bankAccountID are required",
-      });
-    }
-
-    const parsedPaymentID = Number(paymentID);
-    const parsedBankAccountID = Number(bankAccountID);
-
-    if (!parsedPaymentID || !parsedBankAccountID) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid input values",
-      });
-    }
-
-    const data = await refund({
-      userId: req.user.userId,
-      paymentId: parsedPaymentID,
-      bankAccountId: parsedBankAccountID,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Refund completed successfully",
-      ...data,
-    });
-  } catch (error: any) {
-    if (error.message === "PAYMENT_NOT_FOUND") {
-      return res.status(404).json({
-        success: false,
-        message: "Payment not found",
-      });
-    }
-
-    if (error.message === "BANK_ACCOUNT_NOT_FOUND") {
-      return res.status(404).json({
-        success: false,
-        message: "Bank account not found",
-      });
-    }
-
-    if (error.message === "NO_PERMISSION") {
-      return res.status(403).json({
-        success: false,
-        message: "You do not have permission to refund this payment",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Refund failed",
+      message: "Failed to refund payment",
     });
   }
 };

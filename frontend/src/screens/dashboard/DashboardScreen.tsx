@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -34,10 +34,7 @@ export default function DashboardScreen() {
   const totalExpenses = Number(summary?.totalExpenses ?? 0);
   const monthlyExpenses = Number(summary?.monthlyExpenses ?? 0);
 
-  // هنا التعديل المهم:
-  // نستعمل totalExpenses لكي ينقص من 5000
   const usedBudget = totalExpenses;
-
   const remaining = Math.max(monthlyBudget - usedBudget, 0);
 
   const budgetPercentage = useMemo(() => {
@@ -90,7 +87,7 @@ export default function DashboardScreen() {
   };
 
   const goToPayments = () => {
-    console.log("Go to payments");
+    router.push("/payments" as any);
   };
 
   const goToParental = () => {
@@ -99,6 +96,7 @@ export default function DashboardScreen() {
 
   const goToKidsView = () => {
     console.log("Go to kids");
+   
   };
 
   const goToAllTransactions = () => {
@@ -124,67 +122,50 @@ export default function DashboardScreen() {
         }
       >
         <LinearGradient
-          colors={["#13C767", "#0DAD5B"]}
+          colors={["#06C957", "#1588F2"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.header}
         >
           <View style={styles.headerTop}>
-            <View>
-              <Text style={styles.headerTitle}>Family Wallet</Text>
-              <Text style={styles.headerSubtitle}>
-                {family?.name || "My Family"}
-              </Text>
-            </View>
+            <Text style={styles.headerTitle}>Family Wallet</Text>
 
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user?.fullName?.charAt(0)?.toUpperCase() || "U"}
-              </Text>
-            </View>
-          </View>
+            <View style={styles.quickActions}>
+              {(user?.role === "PARENT" || user?.role === "CHILD") && (
+                <TouchableOpacity
+                  style={[styles.quickButton, styles.kidsButton]}
+                  onPress={goToKidsView}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.quickButtonText}>Kids View</Text>
+                </TouchableOpacity>
+              )}
 
-          <View style={styles.quickActions}>
-            {(user?.role === "PARENT" || user?.role === "CHILD") && (
+              {user?.role === "PARENT" && (
+                <TouchableOpacity
+                  style={[styles.quickButton, styles.parentalButton]}
+                  onPress={goToParental}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.quickButtonText}>Parental</Text>
+                </TouchableOpacity>
+              )}
+
               <TouchableOpacity
-                style={styles.quickButton}
-                onPress={goToKidsView}
+                style={[styles.quickButton, styles.paymentsButton]}
+                onPress={goToPayments}
+                activeOpacity={0.85}
               >
-                <Ionicons name="happy-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.quickButtonText}>Kids View</Text>
+                <Text style={styles.quickButtonText}>Payments</Text>
               </TouchableOpacity>
-            )}
-
-            {user?.role === "PARENT" && (
-              <TouchableOpacity
-                style={styles.quickButton}
-                onPress={goToParental}
-              >
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={18}
-                  color="#FFFFFF"
-                />
-                <Text style={styles.quickButtonText}>Parental</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity style={styles.quickButton} onPress={goToPayments}>
-              <Ionicons name="card-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.quickButtonText}>Payments</Text>
-            </TouchableOpacity>
+            </View>
           </View>
 
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>{formatMoney(remaining)}</Text>
-            <Text style={styles.balanceHint}>
-              Remaining from this month's budget
-            </Text>
           </View>
-        </LinearGradient>
 
-        <View style={styles.content}>
           <View style={styles.budgetCard}>
             <View style={styles.cardHeaderRow}>
               <Text style={styles.cardTitle}>Monthly Budget</Text>
@@ -201,14 +182,16 @@ export default function DashboardScreen() {
             </View>
 
             <Text style={styles.budgetText}>
-              {formatMoney(usedBudget)} used of {formatMoney(monthlyBudget)}
+              {formatMoney(usedBudget)} of {formatMoney(monthlyBudget)}
             </Text>
 
             <Text style={styles.monthlyHint}>
               This month only: {formatMoney(monthlyExpenses)}
             </Text>
           </View>
+        </LinearGradient>
 
+        <View style={styles.content}>
           <View style={styles.statsRow}>
             <View style={styles.statCard}>
               <View style={styles.statIconRed}>
@@ -297,157 +280,179 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#EAF3F2",
   },
+
   scrollContent: {
     paddingBottom: 120,
   },
+
   loadingContainer: {
     flex: 1,
     backgroundColor: "#EAF3F2",
     justifyContent: "center",
     alignItems: "center",
   },
+
   loadingText: {
     marginTop: 12,
     color: "#102E59",
     fontSize: 16,
     fontWeight: "600",
   },
+
   header: {
-    paddingTop: 58,
-    paddingHorizontal: 22,
+    paddingTop: 16,
+    paddingHorizontal: 26,
     paddingBottom: 30,
-    borderBottomLeftRadius: 34,
-    borderBottomRightRadius: 34,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
   },
+
   headerTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
   },
+
   headerTitle: {
     fontSize: 30,
     fontWeight: "900",
     color: "#FFFFFF",
   },
-  headerSubtitle: {
-    marginTop: 4,
-    fontSize: 16,
-    color: "#E9FFF2",
-    fontWeight: "600",
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "900",
-  },
+
   quickActions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 22,
-  },
-  quickButton: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    gap: 10,
   },
+
+  quickButton: {
+    height: 44,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 5,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 7,
+    elevation: 7,
+  },
+
+  kidsButton: {
+    backgroundColor: "#B63DF5",
+  },
+
+  parentalButton: {
+    backgroundColor: "#2585F5",
+  },
+
+  paymentsButton: {
+    backgroundColor: "#00BE3F",
+  },
+
   quickButtonText: {
     color: "#FFFFFF",
-    fontWeight: "800",
-    fontSize: 13,
+    fontWeight: "900",
+    fontSize: 16,
   },
+
   balanceCard: {
     backgroundColor: "rgba(255,255,255,0.22)",
-    borderRadius: 26,
-    padding: 20,
-    marginTop: 22,
+    borderRadius: 18,
+    paddingVertical: 28,
+    paddingHorizontal: 30,
+    marginTop: 56,
   },
+
   balanceLabel: {
-    color: "#E9FFF2",
-    fontSize: 15,
-    fontWeight: "700",
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "500",
   },
+
   balanceAmount: {
     color: "#FFFFFF",
-    fontSize: 36,
-    fontWeight: "900",
-    marginTop: 6,
+    fontSize: 44,
+    fontWeight: "400",
+    marginTop: 12,
   },
-  balanceHint: {
-    color: "#E9FFF2",
-    fontSize: 13,
-    marginTop: 6,
-  },
-  content: {
+
+  budgetCard: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderRadius: 18,
+    paddingVertical: 24,
     paddingHorizontal: 20,
     marginTop: 20,
   },
-  budgetCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-  },
+
   cardHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+
   cardTitle: {
-    color: "#102E59",
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: "900",
+    fontWeight: "500",
   },
+
   percentage: {
-    color: "#08C742",
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: "900",
-  },
-  progressTrack: {
-    height: 12,
-    borderRadius: 10,
-    backgroundColor: "#E5E7EB",
-    marginTop: 16,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 10,
-    backgroundColor: "#08C742",
-  },
-  budgetText: {
-    marginTop: 12,
-    color: "#4B5563",
     fontWeight: "700",
   },
+
+  progressTrack: {
+    height: 15,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.35)",
+    marginTop: 18,
+    overflow: "hidden",
+  },
+
+  progressFill: {
+    height: "100%",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+
+  budgetText: {
+    marginTop: 12,
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
   monthlyHint: {
     marginTop: 6,
-    color: "#6B7280",
+    color: "rgba(255,255,255,0.9)",
     fontSize: 13,
     fontWeight: "600",
   },
+
+  content: {
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+
   statsRow: {
     flexDirection: "row",
     gap: 14,
   },
+
   statCard: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 18,
   },
+
   statIconRed: {
     width: 42,
     height: 42,
@@ -456,6 +461,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
   statIconGreen: {
     width: 42,
     height: 42,
@@ -464,18 +470,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
   statLabel: {
     color: "#6B7280",
     fontSize: 14,
     fontWeight: "700",
     marginTop: 14,
   },
+
   statValue: {
     color: "#102E59",
     fontSize: 18,
     fontWeight: "900",
     marginTop: 5,
   },
+
   sectionHeader: {
     marginTop: 24,
     marginBottom: 12,
@@ -483,16 +492,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+
   sectionTitle: {
     color: "#102E59",
     fontSize: 20,
     fontWeight: "900",
   },
+
   seeAll: {
     color: "#08C742",
     fontWeight: "900",
     fontSize: 15,
   },
+
   transactionCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
@@ -501,6 +513,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+
   transactionIcon: {
     width: 46,
     height: 46,
@@ -509,44 +522,52 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
   transactionInfo: {
     flex: 1,
     marginLeft: 14,
   },
+
   transactionTitle: {
     color: "#102E59",
     fontWeight: "900",
     fontSize: 16,
   },
+
   transactionMeta: {
     color: "#6B7280",
     fontWeight: "600",
     fontSize: 13,
     marginTop: 4,
   },
+
   transactionAmount: {
     color: "#EF4444",
     fontSize: 15,
     fontWeight: "900",
   },
+
   emptyCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 22,
     padding: 24,
     alignItems: "center",
   },
+
   emptyTitle: {
     color: "#102E59",
     fontSize: 18,
     fontWeight: "900",
     marginTop: 10,
   },
+
   emptyText: {
     color: "#6B7280",
     textAlign: "center",
     marginTop: 6,
     lineHeight: 20,
   },
+
   floatingButton: {
     position: "absolute",
     right: 24,
@@ -558,5 +579,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     elevation: 8,
+
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
   },
 });
