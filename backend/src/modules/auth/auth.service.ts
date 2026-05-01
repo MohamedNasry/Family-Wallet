@@ -139,7 +139,14 @@ export const loginUser = async (email: string, password: string) => {
 };
 export const getCurrentUser = async (userId: number) => {
   const result = await pool.query(
-    `SELECT user_id, wallet_id, full_name, email, phone, role, joined_at
+    `SELECT 
+       user_id AS "userId",
+       wallet_id AS "walletId",
+       full_name AS "fullName",
+       email,
+       phone,
+       role,
+       joined_at AS "joinedAt"
      FROM app_user
      WHERE user_id = $1`,
     [userId]

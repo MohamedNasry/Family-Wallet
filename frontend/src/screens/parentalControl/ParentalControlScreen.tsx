@@ -8,6 +8,10 @@ import {
   ActivityIndicator,
   RefreshControl,
   Switch,
+  Alert,
+  Platform,
+  Modal,
+  TextInput,
 } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,12 +20,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { meApi } from "../../api/auth.api";
 import { getFamilyMembersApi } from "../../api/family.api";
 import { getBillsApi } from "../../api/bills.api";
-import { getCategoriesApi } from "../../api/categories.api";
+import {
+  getParentalApprovalsApi,
+  approveParentalApprovalApi,
+  declineParentalApprovalApi,
+  getBlockedCategoriesApi,
+  updateBlockedCategoryApi,
+} from "../../api/parental.api";
+import { createCategoryApi } from "../../api/categories.api";
 
 import type { User } from "../../types/user.types";
 import type { FamilyMember } from "../../types/family.types";
 import type { Bill } from "../../types/bill.types";
-import type { Category } from "../../types/category.types";
+import type {
+  BlockedCategory,
+  ParentalApproval,
+} from "../../types/parental.types";
 
 type ChildSpendingInfo = {
   userId: number;
@@ -36,17 +50,29 @@ export default function ParentalControlScreen() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [approvals, setApprovals] = useState<ParentalApproval[]>([]);
+  const [blockedCategories, setBlockedCategories] = useState<BlockedCategory[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // state محلي للـ blocked categories (placeholder)
-  const [blockedMap, setBlockedMap] = useState<Record<number, boolean>>({});
+  const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
+
+  const showMessage = (title: string, message: string) => {
+    if (Platform.OS === "web") {
+      window.alert(`${title}\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
 
   const loadScreen = useCallback(async () => {
     try {
       const meResponse = await meApi();
       const user = meResponse.user;
+
       setCurrentUser(user);
 
       if (user.role !== "PARENT") {
@@ -55,29 +81,25 @@ export default function ParentalControlScreen() {
         return;
       }
 
-      const [membersResponse, billsResponse, categoriesResponse] =
-        await Promise.all([
-          getFamilyMembersApi(user.walletId),
-          getBillsApi(),
-          getCategoriesApi(),
-        ]);
+      const [
+        membersResponse,
+        billsResponse,
+        approvalsResponse,
+        blockedCategoriesResponse,
+      ] = await Promise.all([
+        getFamilyMembersApi(user.walletId),
+        getBillsApi(),
+        getParentalApprovalsApi("PENDING"),
+        getBlockedCategoriesApi(),
+      ]);
 
       setMembers(membersResponse.members || []);
       setBills(billsResponse.bills || []);
-      setCategories(categoriesResponse.categories || []);
-
-      const harmfulCategories = (categoriesResponse.categories || []).filter(
-        (cat) => cat.isHarmful
-      );
-
-      const initialBlockedMap: Record<number, boolean> = {};
-      harmfulCategories.forEach((cat) => {
-        initialBlockedMap[cat.categoryId] = true;
-      });
-
-      setBlockedMap(initialBlockedMap);
+      setApprovals(approvalsResponse.approvals || []);
+      setBlockedCategories(blockedCategoriesResponse.categories || []);
     } catch (error: any) {
       console.log("PARENTAL CONTROL ERROR:", error?.message);
+      showMessage("Error", error?.message || "Failed to load parental control");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -97,17 +119,8 @@ export default function ParentalControlScreen() {
     return members.filter((member) => member.role === "CHILD");
   }, [members]);
 
-  // limits placeholder
-  const spendingLimits: Record<number, number> = useMemo(() => {
-    const result: Record<number, number> = {};
-    children.forEach((child, index) => {
-      result[child.userId] = index % 2 === 0 ? 50 : 40;
-    });
-    return result;
-  }, [children]);
-
   const childSpending: ChildSpendingInfo[] = useMemo(() => {
-    return children.map((child) => {
+    return children.map((child, index) => {
       const childBills = bills.filter(
         (bill) => Number(bill.createdBy) === Number(child.userId)
       );
@@ -116,7 +129,9 @@ export default function ParentalControlScreen() {
         return sum + Number(bill.totalAmount || 0);
       }, 0);
 
-      const limit = spendingLimits[child.userId] || 50;
+      // حاليا لا يوجد جدول spending limits، لذلك limit مؤقت
+      const limit = index % 2 === 0 ? 50 : 40;
+
       const remaining = Math.max(limit - spent, 0);
       const usedPercent =
         limit > 0 ? Math.min(Math.round((spent / limit) * 100), 100) : 0;
@@ -130,42 +145,115 @@ export default function ParentalControlScreen() {
         usedPercent,
       };
     });
-  }, [children, bills, spendingLimits]);
+  }, [children, bills]);
 
-  // placeholder approvals
-  const pendingApprovals = [
-    {
-      id: 1,
-      title: "New Video Game",
-      childName: "Emma",
-      amount: 45,
-      category: "Games",
-      timeAgo: "5 min ago",
-    },
-    {
-      id: 2,
-      title: "Candy Pack",
-      childName: "Alex",
-      amount: 8,
-      category: "Junk Food",
-      timeAgo: "1 hour ago",
-    },
-  ];
+  const handleApprove = async (approvalId: number) => {
+    try {
+      await approveParentalApprovalApi(approvalId);
 
-  const harmfulCategories = useMemo(() => {
-    return categories.filter((cat) => cat.isHarmful);
-  }, [categories]);
+      setApprovals((prev) =>
+        prev.filter((approval) => approval.approvalId !== approvalId)
+      );
 
-  const toggleBlocked = (categoryId: number) => {
-    setBlockedMap((prev) => ({
-      ...prev,
-      [categoryId]: !prev[categoryId],
-    }));
+      showMessage("Success", "Approval request approved successfully");
+      loadScreen();
+    } catch (error: any) {
+      showMessage("Error", error.message || "Failed to approve request");
+    }
   };
 
-  const getFirstEmoji = (name: string) => {
+  const handleDecline = async (approvalId: number) => {
+    try {
+      await declineParentalApprovalApi(approvalId, "Declined by parent");
+
+      setApprovals((prev) =>
+        prev.filter((approval) => approval.approvalId !== approvalId)
+      );
+
+      showMessage("Success", "Approval request declined successfully");
+      loadScreen();
+    } catch (error: any) {
+      showMessage("Error", error.message || "Failed to decline request");
+    }
+  };
+
+  const handleToggleBlockedCategory = async (
+    categoryId: number,
+    nextValue: boolean
+  ) => {
+    const oldCategories = blockedCategories;
+
+    setBlockedCategories((prev) =>
+      prev.map((category) =>
+        category.categoryId === categoryId
+          ? {
+              ...category,
+              blocked: nextValue,
+            }
+          : category
+      )
+    );
+
+    try {
+      await updateBlockedCategoryApi(categoryId, nextValue);
+    } catch (error: any) {
+      setBlockedCategories(oldCategories);
+      showMessage("Error", error.message || "Failed to update category");
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    try {
+      const categoryName = newCategoryName.trim();
+
+      if (!categoryName) {
+        showMessage("Error", "Category name is required");
+        return;
+      }
+
+      setCreatingCategory(true);
+
+      const response = await createCategoryApi({
+        name: categoryName,
+        isHarmful: true,
+      });
+
+      await updateBlockedCategoryApi(response.category.categoryId, true);
+
+      setNewCategoryName("");
+      setAddCategoryModalVisible(false);
+
+      showMessage("Success", "Category added and blocked successfully");
+      loadScreen();
+    } catch (error: any) {
+      showMessage("Error", error.message || "Failed to create category");
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
+
+  const getChildEmoji = (name: string) => {
     const list = ["🧒", "👦", "👧", "🧑"];
     return list[name.length % list.length];
+  };
+
+  const formatAmount = (amount: number, currency = "MAD") => {
+    return `${Number(amount || 0).toFixed(2)} ${currency}`;
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const diffMs = Date.now() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
+
+    if (diffMinutes < 1) return "Just now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} hour ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day ago`;
   };
 
   if (loading) {
@@ -219,7 +307,10 @@ export default function ParentalControlScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.header}
         >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
             <Text style={styles.backButtonText}>← Back</Text>
           </TouchableOpacity>
 
@@ -228,11 +319,10 @@ export default function ParentalControlScreen() {
             <Text style={styles.headerTitle}>Parental Control</Text>
           </View>
 
-          <Text style={styles.headerSubtitle}>Manage children’s spending</Text>
+          <Text style={styles.headerSubtitle}>Manage children's spending</Text>
         </LinearGradient>
 
         <View style={styles.content}>
-          {/* Pending Approvals */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <View style={styles.sectionTitleRow}>
@@ -241,55 +331,75 @@ export default function ParentalControlScreen() {
               </View>
 
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{pendingApprovals.length}</Text>
+                <Text style={styles.badgeText}>{approvals.length}</Text>
               </View>
             </View>
 
-            {pendingApprovals.map((item) => (
-              <View key={item.id} style={styles.approvalItem}>
-                <Text style={styles.approvalTitle}>{item.title}</Text>
-                <Text style={styles.approvalMeta}>
-                  {item.childName} • ${item.amount} • {item.category}
-                </Text>
-                <Text style={styles.approvalTime}>{item.timeAgo}</Text>
+            {approvals.length === 0 ? (
+              <Text style={styles.emptyText}>No pending approvals found.</Text>
+            ) : (
+              approvals.map((approval) => (
+                <View key={approval.approvalId} style={styles.approvalItem}>
+                  <Text style={styles.approvalTitle}>{approval.title}</Text>
 
-                <View style={styles.approvalActions}>
-                  <TouchableOpacity style={styles.approveBtn}>
-                    <Text style={styles.actionBtnText}>✓ Approve</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.approvalMeta}>
+                    {approval.childName} •{" "}
+                    {formatAmount(approval.amount, approval.currency)} •{" "}
+                    {approval.categoryName || "Uncategorized"}
+                  </Text>
 
-                  <TouchableOpacity style={styles.declineBtn}>
-                    <Text style={styles.actionBtnText}>✕ Decline</Text>
-                  </TouchableOpacity>
+                  <Text style={styles.approvalTime}>
+                    {formatTime(approval.requestedAt)}
+                  </Text>
+
+                  <View style={styles.approvalActions}>
+                    <TouchableOpacity
+                      style={styles.approveBtn}
+                      onPress={() => handleApprove(approval.approvalId)}
+                    >
+                      <Text style={styles.actionBtnText}>✓ Approve</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.declineBtn}
+                      onPress={() => handleDecline(approval.approvalId)}
+                    >
+                      <Text style={styles.actionBtnText}>✕ Decline</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </View>
 
-          {/* Spending Limits */}
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Spending Limits</Text>
 
             {childSpending.length === 0 ? (
-              <Text style={styles.emptyText}>No children found in this family.</Text>
+              <Text style={styles.emptyText}>No children found.</Text>
             ) : (
               childSpending.map((child) => (
                 <View key={child.userId} style={styles.limitItem}>
                   <View style={styles.limitHeader}>
-                    <Text style={styles.childEmoji}>{getFirstEmoji(child.fullName)}</Text>
+                    <Text style={styles.childEmoji}>
+                      {getChildEmoji(child.fullName)}
+                    </Text>
 
                     <View style={{ flex: 1 }}>
                       <Text style={styles.childName}>{child.fullName}</Text>
                       <Text style={styles.childSubText}>
-                        ${child.spent.toFixed(2)} / ${child.limit.toFixed(2)} this month
+                        {formatAmount(child.spent)} / {formatAmount(child.limit)} this
+                        month
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.limitLabelsRow}>
-                    <Text style={styles.limitSmallText}>{child.usedPercent}% used</Text>
                     <Text style={styles.limitSmallText}>
-                      ${child.remaining.toFixed(2)} remaining
+                      {child.usedPercent}% used
+                    </Text>
+                    <Text style={styles.limitSmallText}>
+                      {formatAmount(child.remaining)} remaining
                     </Text>
                   </View>
 
@@ -310,22 +420,42 @@ export default function ParentalControlScreen() {
             )}
           </View>
 
-          {/* Blocked Categories */}
           <View style={styles.sectionCard}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="ban-outline" size={24} color="#EF4444" />
-              <Text style={styles.sectionTitle}>Blocked Categories</Text>
+            <View style={styles.blockedHeaderRow}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="ban-outline" size={24} color="#EF4444" />
+                <Text style={styles.sectionTitle}>Blocked Categories</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.smallAddCategoryBtn}
+                onPress={() => setAddCategoryModalVisible(true)}
+              >
+                <Text style={styles.smallAddCategoryText}>+ Add</Text>
+              </TouchableOpacity>
             </View>
 
-            {harmfulCategories.length === 0 ? (
-              <Text style={styles.emptyText}>No harmful categories found.</Text>
+            {blockedCategories.length === 0 ? (
+              <Text style={styles.emptyText}>No categories found.</Text>
             ) : (
-              harmfulCategories.map((category) => (
+              blockedCategories.map((category) => (
                 <View key={category.categoryId} style={styles.categoryItem}>
-                  <Text style={styles.categoryName}>{category.name}</Text>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={styles.categoryName}>{category.name}</Text>
+
+                    {category.isHarmful && (
+                      <Text style={styles.harmfulText}>Harmful category</Text>
+                    )}
+                  </View>
+
                   <Switch
-                    value={!!blockedMap[category.categoryId]}
-                    onValueChange={() => toggleBlocked(category.categoryId)}
+                    value={category.blocked}
+                    onValueChange={(nextValue) =>
+                      handleToggleBlockedCategory(
+                        category.categoryId,
+                        nextValue
+                      )
+                    }
                     trackColor={{ false: "#D1D5DB", true: "#FF5A5F" }}
                     thumbColor="#FFFFFF"
                   />
@@ -333,15 +463,21 @@ export default function ParentalControlScreen() {
               ))
             )}
 
-            <TouchableOpacity style={styles.addCategoryBtn}>
+            <TouchableOpacity
+              style={styles.addCategoryBtn}
+              onPress={() => setAddCategoryModalVisible(true)}
+            >
               <Text style={styles.addCategoryText}>Add Category</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Safety card */}
           <View style={styles.infoCard}>
             <View style={styles.infoIcon}>
-              <Ionicons name="shield-checkmark-outline" size={24} color="#2563EB" />
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={24}
+                color="#2563EB"
+              />
             </View>
 
             <View style={{ flex: 1 }}>
@@ -354,6 +490,54 @@ export default function ParentalControlScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={addCategoryModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddCategoryModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Add Blocked Category</Text>
+
+            <TextInput
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
+              placeholder="Category name"
+              placeholderTextColor="#6B7280"
+              style={styles.modalInput}
+              editable={!creatingCategory}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.modalPrimaryBtn,
+                creatingCategory && styles.disabledBtn,
+              ]}
+              onPress={handleCreateCategory}
+              disabled={creatingCategory}
+            >
+              {creatingCategory ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.modalPrimaryText}>Add Category</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelBtn}
+              onPress={() => {
+                setNewCategoryName("");
+                setAddCategoryModalVisible(false);
+              }}
+              disabled={creatingCategory}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -440,7 +624,7 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   sectionCard: {
-    backgroundColor: "#F8F8F8",
+    backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 18,
     shadowColor: "#000",
@@ -575,6 +759,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 4,
   },
+  blockedHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  smallAddCategoryBtn: {
+    backgroundColor: "#F0F2F5",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  smallAddCategoryText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#102E59",
+  },
   categoryItem: {
     backgroundColor: "#F4F5F7",
     borderRadius: 18,
@@ -589,6 +790,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#102E59",
+  },
+  harmfulText: {
+    fontSize: 12,
+    color: "#EF4444",
+    marginTop: 3,
+    fontWeight: "600",
   },
   addCategoryBtn: {
     marginTop: 16,
@@ -635,5 +842,60 @@ const styles = StyleSheet.create({
     marginTop: 14,
     color: "#6B7280",
     fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#102E59",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  modalInput: {
+    backgroundColor: "#F4F5F7",
+    borderRadius: 16,
+    height: 54,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: "#102E59",
+    marginBottom: 14,
+  },
+  modalPrimaryBtn: {
+    backgroundColor: "#08C742",
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  disabledBtn: {
+    opacity: 0.7,
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  modalCancelBtn: {
+    backgroundColor: "#F0F2F5",
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  modalCancelText: {
+    color: "#102E59",
+    fontWeight: "700",
+    fontSize: 16,
   },
 });

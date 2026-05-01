@@ -10,11 +10,12 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
 import { getMyFamilyApi } from "../../api/family.api";
 import { getBillsApi, getBillsSummaryApi } from "../../api/bills.api";
 import { meApi } from "../../api/auth.api";
+
 import type { Family } from "../../types/family.types";
 import type { Bill, BillsSummary } from "../../types/bill.types";
 import type { User } from "../../types/user.types";
@@ -29,21 +30,25 @@ export default function DashboardScreen() {
 
   const currency = family?.currency || "MAD";
 
-  const monthlyBudget = summary?.monthlyBudget ?? 5000;
-  const monthlyExpenses = summary?.monthlyExpenses ?? 0;
-  const totalExpenses = summary?.totalExpenses ?? 0;
-  const remaining = Math.max(monthlyBudget - monthlyExpenses, 0);
+  const monthlyBudget = Number(summary?.monthlyBudget ?? 5000);
+  const totalExpenses = Number(summary?.totalExpenses ?? 0);
+  const monthlyExpenses = Number(summary?.monthlyExpenses ?? 0);
+
+  // هنا التعديل المهم:
+  // نستعمل totalExpenses لكي ينقص من 5000
+  const usedBudget = totalExpenses;
+
+  const remaining = Math.max(monthlyBudget - usedBudget, 0);
 
   const budgetPercentage = useMemo(() => {
     if (!monthlyBudget) return 0;
 
-    const percentage = (monthlyExpenses / monthlyBudget) * 100;
+    const percentage = (usedBudget / monthlyBudget) * 100;
     return Math.min(Math.round(percentage), 100);
-  }, [monthlyBudget, monthlyExpenses]);
+  }, [monthlyBudget, usedBudget]);
 
   const formatMoney = (value: number | string | null | undefined) => {
     const amount = Number(value || 0);
-
     return `${amount.toFixed(2)} ${currency}`;
   };
 
@@ -59,7 +64,7 @@ export default function DashboardScreen() {
 
       setFamily(familyResponse.family);
       setSummary(summaryResponse.summary);
-      setRecentBills(billsResponse.bills);
+      setRecentBills(billsResponse.bills || []);
       setUser(meResponse.user);
     } catch (error: any) {
       console.log("DASHBOARD ERROR:", error.message);
@@ -69,9 +74,11 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboard();
+    }, [loadDashboard])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -79,27 +86,22 @@ export default function DashboardScreen() {
   };
 
   const goToAddExpense = () => {
-    // router.push("/add-expense" as any);
-    //console.log("Go to Add Expense");
+    router.push("/bills/add-expense" as any);
   };
 
   const goToPayments = () => {
-    // router.push("/payments" as any);
-    console.log("Go to Add payments");
+    console.log("Go to payments");
   };
 
   const goToParental = () => {
     router.push("/parental-control" as any);
-    // console.log("Go to  parental");
   };
 
   const goToKidsView = () => {
-    // router.push("/kids-view" as any);
     console.log("Go to kids");
   };
 
   const goToAllTransactions = () => {
-    // router.push("/expenses" as any);
     console.log("Go to expenses");
   };
 
@@ -177,7 +179,7 @@ export default function DashboardScreen() {
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>{formatMoney(remaining)}</Text>
             <Text style={styles.balanceHint}>
-              Remaining from this month’s budget
+              Remaining from this month's budget
             </Text>
           </View>
         </LinearGradient>
@@ -191,13 +193,19 @@ export default function DashboardScreen() {
 
             <View style={styles.progressTrack}>
               <View
-                style={[styles.progressFill, { width: `${budgetPercentage}%` }]}
+                style={[
+                  styles.progressFill,
+                  { width: `${budgetPercentage}%` },
+                ]}
               />
             </View>
 
             <Text style={styles.budgetText}>
-              {formatMoney(monthlyExpenses)} used of{" "}
-              {formatMoney(monthlyBudget)}
+              {formatMoney(usedBudget)} used of {formatMoney(monthlyBudget)}
+            </Text>
+
+            <Text style={styles.monthlyHint}>
+              This month only: {formatMoney(monthlyExpenses)}
             </Text>
           </View>
 
@@ -210,6 +218,7 @@ export default function DashboardScreen() {
                   color="#EF4444"
                 />
               </View>
+
               <Text style={styles.statLabel}>Total Expenses</Text>
               <Text style={styles.statValue}>{formatMoney(totalExpenses)}</Text>
             </View>
@@ -218,6 +227,7 @@ export default function DashboardScreen() {
               <View style={styles.statIconGreen}>
                 <Ionicons name="wallet-outline" size={22} color="#08A63A" />
               </View>
+
               <Text style={styles.statLabel}>Remaining</Text>
               <Text style={styles.statValue}>{formatMoney(remaining)}</Text>
             </View>
@@ -259,6 +269,7 @@ export default function DashboardScreen() {
                   <Text style={styles.transactionTitle} numberOfLines={1}>
                     {bill.title}
                   </Text>
+
                   <Text style={styles.transactionMeta} numberOfLines={1}>
                     {bill.categoryName || "Uncategorized"} •{" "}
                     {bill.createdByName || "Unknown"}
@@ -419,6 +430,12 @@ const styles = StyleSheet.create({
   budgetText: {
     marginTop: 12,
     color: "#4B5563",
+    fontWeight: "700",
+  },
+  monthlyHint: {
+    marginTop: 6,
+    color: "#6B7280",
+    fontSize: 13,
     fontWeight: "600",
   },
   statsRow: {
